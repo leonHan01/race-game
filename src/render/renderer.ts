@@ -9,6 +9,7 @@ import { SkidMarks } from './skid-marks';
 import { capturePose, type VehiclePose } from '../presentation';
 import { getVehicle, type VehicleDefinition } from '../content/vehicles';
 import { disposeObject } from './dispose';
+import { RivalCars } from './rivals';
 
 const DUST_COUNT = 160;
 interface Dust { x: number; y: number; z: number; vx: number; vz: number; life: number; maxLife: number; size: number; spread: number }
@@ -18,6 +19,7 @@ export class RallyRenderer {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(58, 1, 0.12, 6500);
   car = new RallyCar(getVehicle(settings.vehicleId));
+  private rivals = new RivalCars();
   private sceneryRoot = new THREE.Group();
   private dust: Dust[] = [];
   private dustCursor = 0;
@@ -57,7 +59,7 @@ export class RallyRenderer {
     this.sky.renderOrder = -1; this.scene.add(this.sky);
     this.scene.add(this.sceneryRoot);
     this.scenery = buildWorld(this.sceneryRoot, track);
-    this.scene.add(this.car.group);
+    this.scene.add(this.car.group, this.rivals.group);
     this.car.group.rotation.order = 'YXZ';
 
     const dustCanvas = document.createElement('canvas'); dustCanvas.width = dustCanvas.height = 64;
@@ -125,6 +127,7 @@ export class RallyRenderer {
     // Keep the body level: no suspension bounce, roll, or terrain-driven pitching.
     this.car.update(pose.speed, pose.steerVisual, pose.driftAngle, controls.brake, race.handbrake, active ? dt : 0);
     this.car.setLivery(settings.livery);
+    this.rivals.update(race, pose.rivals, active ? dt : 0);
     this.car.group.updateWorldMatrix(true, false);
     this.rearLeft.set(-1.035, 0, 1.29).applyMatrix4(this.car.group.matrixWorld);
     this.rearRight.set(1.035, 0, 1.29).applyMatrix4(this.car.group.matrixWorld);

@@ -5,7 +5,8 @@ export interface TrackPoint { x: number; y: number; z: number }
 export interface TrackFrame extends TrackPoint { tx: number; tz: number; rx: number; rz: number; heading: number }
 export interface TrackProjection extends TrackFrame { distance: number; lane: number }
 export interface PaceNote { distance: number; direction: 'left' | 'right' | 'straight'; severity: number; label: string }
-export const ROAD_WIDTH = 11;
+export interface VenueBounds { minX: number; maxX: number; minZ: number; maxZ: number; floor: number; height: number }
+export const ROAD_WIDTH = 18;
 export const SECTORS = 5;
 export const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -14,12 +15,13 @@ function catmull(a: number, b: number, c: number, d: number, t: number) {
   return 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
 }
 
-/** Point-to-point mountain stage, sampled by arc length. Units: metres. */
+/** Point-to-point rally stage, sampled by arc length. Units: metres. */
 export class Track {
   readonly points: TrackPoint[] = [];
   readonly distances: number[] = [0];
   readonly length: number;
   readonly notes: PaceNote[] = [];
+  readonly venueBounds: VenueBounds | null;
 
   get roadWidth() { return this.definition.roadWidth; }
   get shoulderEdge() { return this.roadWidth / 2 + 2.5; }
@@ -43,6 +45,14 @@ export class Track {
       this.distances.push(this.distances[i - 1] + Math.hypot(q.x - p.x, q.z - p.z));
     }
     this.length = this.distances[this.distances.length - 1];
+    const venue = definition.venue;
+    if (venue) {
+      const footprint = [...this.points, this.position(-32), this.position(this.length + 40)];
+      const padding = venue.margin + this.roadWidth / 2;
+      this.venueBounds = { minX: Math.min(...footprint.map(p => p.x)) - padding, maxX: Math.max(...footprint.map(p => p.x)) + padding,
+        minZ: Math.min(...footprint.map(p => p.z)) - padding, maxZ: Math.max(...footprint.map(p => p.z)) + padding,
+        floor: controls[0].y, height: venue.height };
+    } else this.venueBounds = null;
     let lastNote = -150;
     for (let distance = 100; distance < this.length - 80; distance += 20) {
       const curvature = this.curvature(distance);
@@ -113,7 +123,19 @@ export class Track {
   }
 
   surfaceHeight(x: number, z: number, projection = this.project(x, z)): number {
+    if (this.venueBounds) return this.venueBounds.floor;
     // Blend down to the heightfield instead of dropping 1.1 m at the shoulder edge.
     return projection.y + terrainOffset(x, z, projection.lane) * shoulderBlend(projection.lane, this.shoulderEdge);
+  }
+
+  /** Solid outer walls stop translation, without steering or bouncing the car. */
+  confine(position: TrackPoint, clearance: number): boolean {
+    const bounds = this.venueBounds;
+    if (!bounds) return false;
+    const x = clamp(position.x, bounds.minX + clearance, bounds.maxX - clearance);
+    const z = clamp(position.z, bounds.minZ + clearance, bounds.maxZ - clearance);
+    const blocked = x !== position.x || z !== position.z;
+    position.x = x; position.z = z;
+    return blocked;
   }
 }

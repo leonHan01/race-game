@@ -1,9 +1,10 @@
 import { clamp, type Track } from './simulation/track';
 import type { Controls, Race } from './simulation/race';
+import type { RivalPose } from './simulation/opponents';
 
 const STEP = 1 / 60;
 type VehicleMotion = Pick<Race, 'position' | 'heading' | 'travelHeading' | 'driftAngle' | 'steerVisual' | 'speed' | 'elapsed' | 'distance'>;
-export type VehiclePose = VehicleMotion & { roadHeading: number };
+export type VehiclePose = VehicleMotion & { roadHeading: number; rivals: RivalPose[] };
 const scalarKeys = ['driftAngle', 'steerVisual', 'speed', 'elapsed', 'distance'] as const;
 const angleKeys = ['heading', 'travelHeading'] as const;
 
@@ -15,7 +16,11 @@ export function roadViewHeading(track: Track, distance: number) {
 export function capturePose(race: Race): VehiclePose {
   return { position: { ...race.position }, heading: race.heading, travelHeading: race.travelHeading,
     driftAngle: race.driftAngle, steerVisual: race.steerVisual, speed: race.speed, elapsed: race.elapsed,
-    distance: race.distance, roadHeading: roadViewHeading(race.track, race.distance) };
+    distance: race.distance, roadHeading: roadViewHeading(race.track, race.distance),
+    rivals: race.opponents.cars.map(car => ({ position: { ...car.position }, heading: car.heading, speed: car.speed, steering: car.steering })) };
+}
+function copyRivals(target: RivalPose[], source: RivalPose[]) {
+  source.forEach((car, i) => { Object.assign(target[i].position, car.position); target[i].heading = car.heading; target[i].speed = car.speed; target[i].steering = car.steering; });
 }
 function copy(target: VehiclePose, source: VehicleMotion) {
   Object.assign(target.position, source.position);
@@ -35,7 +40,9 @@ export class RaceTimeline {
   reset() {
     this.accumulator = 0;
     const heading = roadViewHeading(this.race.track, this.race.distance);
-    for (const pose of [this.previous, this.current, this.pose]) { copy(pose, this.race); pose.roadHeading = heading; }
+    for (const pose of [this.previous, this.current, this.pose]) {
+      copy(pose, this.race); pose.roadHeading = heading; copyRivals(pose.rivals, this.race.opponents.cars);
+    }
   }
   advance(dt: number, controls: Controls) {
     // Preserve the exact displayed pose and fractional tick while paused.
@@ -43,9 +50,11 @@ export class RaceTimeline {
     this.accumulator += clamp(dt, 0, 0.1);
     while (this.accumulator + 1e-10 >= STEP) {
       copy(this.previous, this.current);
+      copyRivals(this.previous.rivals, this.current.rivals);
       this.previous.roadHeading = this.current.roadHeading;
       this.race.update(STEP, controls);
       copy(this.current, this.race);
+      copyRivals(this.current.rivals, this.race.opponents.cars);
       // Camera yaw is presentation-only. Its fixed-step damping never changes
       // the player's heading or movement and stays identical across paint rates.
       const desired = roadViewHeading(this.race.track, this.race.distance);
@@ -68,6 +77,14 @@ export class RaceTimeline {
       const difference = this.current[key] - this.previous[key];
       this.pose[key] = this.previous[key] + Math.atan2(Math.sin(difference), Math.cos(difference)) * alpha;
     }
+    this.pose.rivals.forEach((car, i) => {
+      const before = this.previous.rivals[i]; const after = this.current.rivals[i];
+      for (const axis of ['x', 'y', 'z'] as const) car.position[axis] = before.position[axis] + (after.position[axis] - before.position[axis]) * alpha;
+      const angle = after.heading - before.heading;
+      car.heading = before.heading + Math.atan2(Math.sin(angle), Math.cos(angle)) * alpha;
+      car.speed = before.speed + (after.speed - before.speed) * alpha;
+      car.steering = before.steering + (after.steering - before.steering) * alpha;
+    });
   }
 }
 

@@ -1,80 +1,170 @@
 # DUSTLINE · 尘途拉力
 
-自然山野风格的 3D 拉力计时赛。四张不同难度的地图、四类不同操控的车辆，以五段计时成绩争夺金牌。
+**English** · [简体中文](README.zh-CN.md)
 
-## 启动
+A 3D browser rally game set on gravel roads, forest passes, red-rock canyons, and snowy mountain routes. Pick a car, line up against five AI drivers, and race for the finish while chasing your best stage time.
 
-需要 Node.js 20.19+ 或 22.12+，以及支持 WebGL 2 的现代浏览器。
+Built with **Three.js, TypeScript, and Vite**. The in-game menus, HUD, and optional co-driver voice are currently in Chinese; this repository provides documentation in both English and Chinese.
+
+## Highlights
+
+- **Six-car races:** five AI opponents with different cars and driving speeds, corner braking, following, and overtaking behavior.
+- **Four stages:** progressively harder routes, with road widths from 14 to 22 meters and different surface grip.
+- **Four vehicle types:** a front-wheel-drive hatchback, an all-wheel-drive rally car, a rear-wheel-drive coupe, and an off-road pickup.
+- **Manual steering:** turn the car yourself, with smooth steering input and no automatic cornering or lane centering.
+- **Hold-to-drift handbrake:** longer Space holds build a larger slide; releasing the key restores grip gradually.
+- **A steady camera:** road-facing chase and low camera views, interpolated movement, and no added screen shake or suspension bounce.
+- **Race position and time trials:** live standings, finish order, five sector splits, medals, and local personal bests.
+- **Rally atmosphere:** natural lighting, procedural scenery and cars, dust trails, fading tyre marks, engine audio, and pace notes.
+
+## Screenshots
+
+Actual captures from the game at 1280 × 720. The in-game interface is currently in Chinese.
+
+**Main menu — Pine Ridge and the FALCON R4**
+
+![DUSTLINE main menu with the FALCON R4 at Pine Ridge](docs/screenshots/menu.jpg)
+
+**Six-car starting grid and race HUD**
+
+![Six cars lined up at Pine Ridge with the position leaderboard, minimap, and speedometer](docs/screenshots/race.jpg)
+
+| Stage selection | Garage |
+| --- | --- |
+| ![Stage selection showing Green Valley and Pine Ridge](docs/screenshots/stages.jpg) | ![Garage showing the SWIFT F2 and FALCON R4](docs/screenshots/garage.jpg) |
+
+The selection screens scroll to show the remaining stages and cars. Original images and capture notes are in [docs/screenshots](docs/screenshots/README.md).
+
+## Quick start
+
+You will need:
+
+- Node.js **20.19+ in the 20.x line, or 22.12+**.
+- npm.
+- A browser with **WebGL 2** and hardware acceleration enabled.
+
+From the project directory:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-开发地址固定为 http://localhost:5175/，避免与其他项目的 5173 端口混淆。如果 5175 已被占用，服务会明确报错，不会自动换端口。生产构建使用 `npm run build`，产物位于 `dist/`；可通过 `npm run preview` 预览构建结果。所有字体与场景资源都随项目打包，运行时不需要远程模型、字体或图片服务。
+Open **[http://localhost:5175/](http://localhost:5175/)**.
 
-## 地图与车库
+The development port is fixed at `5175`. If it is occupied, Vite reports an error instead of choosing another port. Run the project through Vite; opening `index.html` directly from the filesystem does not start the game correctly.
 
-在主菜单点击「选择地图」或「选择车辆」进入赛段目录与车库。选择后立即更新场景、车辆和路线图，再点击「开始赛段」。选择会保存在本地；比赛中需要返回主菜单才能切换。
-
-| 地图 | 难度 | 距离 / 路宽 | 路况 |
-| --- | --- | --- | --- |
-| 绿谷短途 | 入门 | 1.97 km / 15 m | 压实砂石，宽路缓弯，抓地力强 |
-| 松岭山道 | 标准 | 4.09 km / 11 m | 松林砂石，连续 S 弯 |
-| 赤岩峡谷 | 进阶 | 4.54 km / 9 m | 红土碎石，急弯与高速段交替 |
-| 雪岭关隘 | 专家 | 5.42 km / 8 m | 雪面窄路，抓地力与制动能力降低 |
-
-| 车辆 | 类型 | 完好车况极速 | 操控特点 |
-| --- | --- | --- | --- |
-| SWIFT F2 | 前驱小钢炮 | 220 km/h | 轻巧、抓地力强、甩尾温和 |
-| FALCON R4 | 四驱拉力车 | 250 km/h | 均衡的加速与漂移，保留原版手感 |
-| COMET RS | 后驱拉力跑车 | 250 km/h | 加速快、漂移角度大，需要及时反打 |
-| NOMAD T4 | 四驱越野皮卡 | 210 km/h | 耐损、路外减速较少，转向较慢 |
-
-## 驾驶
-
-| 操作 | 按键 |
-| --- | --- |
-| 油门 | W / ↑ |
-| 刹车 | S / ↓ |
-| 手动转向 | A、D / ←、→，控制车头朝向 |
-| 持续手刹 / 漂移 | 按住 Space 制动，配合转向入漂；松开 Space 释放 |
-| 赛道追尾 / 低位赛道视角 | C |
-| 救援回赛道，罚时 5 秒 | R |
-| 暂停 / 继续 | Esc / P |
-
-触屏设备提供左右转向、油门、刹车和手刹按钮。设置中可开启自动油门，降低操作负担。自动油门和驾驶难度在下次发车生效。
-
-车辆按自身朝向在场景中行驶，不会自动跟随赛道、自动回到路中间或替你转弯；两种镜头沿前方道路取景，车头独立偏转，因此能看清实际转向和甩尾。按下、松开或反打方向键时，转向力度都会平滑过渡；松开后转向力度快速归零，随后保留新的行驶朝向。驶离赛道后可自行转向返回，或按 R 救援；只有起跑和主动救援会对齐赛道。五个计时点必须按顺序从赛道内正向穿过。
-
-空格按住期间手刹始终生效，油门不会抵消制动。短按用于轻微甩尾，长按会逐渐增加漂移角度并维持侧滑；入漂后可以松开方向键，反打方向可减小角度。松开空格后才恢复抓地力，长按后的回正过程更长。持续拉手刹最终会使车辆停下，不会原地无限旋转。触屏手刹采用相同规则。
-
-所有车型的最高速度不超过 **250 km/h**，车损仍会降低极速。已移除车身弹跳、侧倾、路面俯仰和碰撞闪屏。车辆与镜头共用经过插值的位姿，镜头朝向取自前方道路并在固定物理步长中平滑转动，使用固定跟车距离、高度偏移与视野，避免物理步长、帧间隔和独立镜头滞后造成跳动。路肩与路外地面平滑衔接，山道原有的缓坡与高低走向保留。
-
-## 内容
-
-- 点到点砂石山道、自然光、松林、岩石、赛事标识和尘土尾流。
-- 原创宽体拉力车模型、三种涂装、辅助灯、尾翼、挡泥板与可转动车轮。
-- 街机式砂石侧滑、手刹漂移、路肩减速、车损影响极速与救援罚时。
-- 漂移时整车渐进甩尾、前轮反打与平滑回正；后轮向侧后方扬尘，留下逐渐消退的砂石胎痕，仪表显示漂移角度。
-- 根据赛道曲率生成的领航员路书，2–3 为急弯，4–5 为快弯；浏览器支持时有中文语音。
-- 五个分段成绩、金银铜完赛等级、最高时速、车辆状态与本地最佳纪录。
-- 最佳纪录按地图、车型、驾驶难度与油门模式分别保存；兼容原松岭山道 / FALCON R4 的 v2 纪录。设置也保存在本地浏览器。
-- 根据车速合成的引擎与砂石音效、倒计时提示音。
-- 标准 / 轻量画质、像素密度上限、植被实例化；菜单和暂停画面按需渲染，后台自动暂停。切换地图复用 WebGL 上下文，并释放旧场景与车辆的资源。
-
-这是街机拉力玩法：车辆有独立的场景坐标、手动控制的朝向和受抓地力影响的移动方向；赛道用于定位进度、路面高度、计时和镜头朝向，不参与车辆自动转向。尚未模拟完整轮胎、悬架和场景物体碰撞。手动转向模式的纪录与此前辅助行驶版本分开保存。
-
-## 代码与验证
-
-`src/content/` 保存地图与车型定义；`src/simulation/` 独立保存赛道、驾驶和计时规则；`src/presentation.ts` 负责固定步长、位姿插值和绘制节奏；`src/render/` 负责 Three.js 场景、车辆、摄像机及尘土；`src/ui/` 负责中文 DOM 菜单和 HUD。`src/input.ts`、`src/audio.ts` 与 `src/settings.ts` 分别负责操作、声音和存档。
+For a production build:
 
 ```bash
-npm run typecheck
-npm test
 npm run build
+npm run preview
 ```
 
-测试仅在 Node.js 中覆盖赛道采样、路书、暂停、刹车、救援、分段计时、终点插值与纪录分类，同时用真实帧回调和镜头更新代码验证不同刷新率下的位移连续性、跟车稳定性和路肩高度连续性。测试不会打开浏览器或创建 WebGL 上下文。
+The build is written to `dist/`. Open the preview URL printed in the terminal. Deploy `dist/` to a static web host when ready to publish. Fonts and scene assets are bundled or generated locally; gameplay does not fetch remote models or images.
 
-按项目要求，开发中不启动游戏做运行或视觉验证；实际驾驶手感、浏览器语音和画面表现尚待手动体验确认。
+## Controls
+
+| Action | Keyboard |
+| --- | --- |
+| Accelerate | `W` / `↑` |
+| Brake | `S` / `↓` |
+| Steer left / right | `A` / `D`, or `←` / `→` |
+| Hold handbrake / drift | Hold `Space`; release to restore grip |
+| Switch chase / low camera | `C` |
+| Recover to the road | `R` — adds a 5-second time penalty |
+| Pause / resume | `Esc` / `P` |
+
+Touch devices have on-screen steering, throttle, brake, and handbrake buttons. Optional automatic throttle lets you focus on steering and braking; it does not steer for you.
+
+Choose **选择地图** (Select stage) or **选择车辆** (Select vehicle) from the main menu, then press **开始赛段** (Start stage). Return to the main menu before changing the stage or car during a race.
+
+## Stages
+
+Distances are approximate. Each route has its own scenery, grip, and medal target.
+
+| Stage | In-game name | Difficulty | Length | Road width | Surface |
+| --- | --- | --- | --- | --- | --- |
+| Green Valley | 绿谷短途 | Beginner | 1.97 km | 22 m | Firm gravel, gentle bends, high grip |
+| Pine Ridge | 松岭山道 | Standard | 4.09 km | 18 m | Loose gravel, forest roads, linked S-bends |
+| Red Canyon | 赤岩峡谷 | Advanced | 4.54 km | 16 m | Loose dirt, fast sections followed by sharp turns |
+| Frost Pass | 雪岭关隘 | Expert | 5.42 km | 14 m | Packed snow, linked corners, reduced grip and braking |
+
+## Garage
+
+Top speeds assume an undamaged vehicle. Damage reduces the available top speed; all cars are capped at **250 km/h** or below.
+
+| Car | Type / drivetrain | Top speed | Handling |
+| --- | --- | --- | --- |
+| SWIFT F2 | Hatchback / FWD | 220 km/h | Light, high grip, mild oversteer |
+| FALCON R4 | Rally car / AWD | 250 km/h | Balanced acceleration, steering, and drift |
+| COMET RS | Coupe / RWD | 250 km/h | Strong acceleration and larger slides; countersteer early |
+| NOMAD T4 | Off-road pickup / AWD | 210 km/h | Durable, less off-road drag, slower steering |
+
+Three player liveries are available: Sandstone White, Forest Green, and Racing Red. Your stage, car, livery, and other preferences are saved locally when browser storage is available.
+
+## Racing and drifting
+
+All six cars start after the same countdown. AI drivers adjust their speed for corners and grip, look for a free neighboring lane, and slow down behind traffic. Professional mode makes their pace faster.
+
+The HUD shows your position and the distance to each opponent. Final position follows the actual finish order. Opponents still on the course are listed with their progress at the moment you finish. Recovery penalties affect your personal time-trial score, not the order in which cars cross the line. Pausing freezes every car; restarting returns the full field to the grid.
+
+You must cross all **five timing gates in order**, moving forward within the road corridor. Cutting past a checkpoint does not count; recovery places you before a missed gate.
+
+Steering changes the player's heading in world space. Releasing the steering key smoothly centers the steering input while keeping the new heading. The camera follows the road ahead independently, so the car can visibly turn and slide within the frame.
+
+To drift, build some speed, steer into the turn, and hold `Space`. A longer hold progressively increases the slide angle. Countersteering reduces the angle; releasing `Space` lets grip return, with a longer recovery after a long hold. The handbrake continuously slows the car even with the throttle pressed. Holding it indefinitely brings the car to a stop.
+
+Pace-note grades **2–3 indicate tighter corners**; **4–5 indicate faster corners**. Going off the road slows the car and damages it. Brake before the corner, then accelerate as you straighten out.
+
+## Settings and saves
+
+| Setting | Behavior |
+| --- | --- |
+| Standard / lightweight graphics | Lightweight mode reduces vegetation and pixel density and targets 30 fps; standard mode targets 60 fps |
+| Club / professional handling | Professional mode reduces grip and increases opponent pace; applies to the next start |
+| Automatic throttle | Applies to the next start; braking and handbraking still take priority |
+| Sound / co-driver voice | Synthesized engine and gravel audio; Chinese pace-note speech depends on browser voice availability |
+| Camera | Road-facing chase or low view |
+
+Best times are stored separately for each **stage × vehicle × handling difficulty × throttle mode**. Previous Pine Ridge / FALCON R4 records remain readable. Settings and records use browser-local storage; there is no account or cloud synchronization.
+
+The game pauses when its tab loses focus. Menus and paused scenes render on demand. Cars and cameras share interpolated poses; vegetation and rival wheels use instancing, and distant opponents are culled to limit rendering work.
+
+## Development
+
+```text
+src/
+├── content/          Stage and vehicle definitions
+├── simulation/       Track, player handling, AI opponents, timing, standings
+├── render/           Three.js scenery, cars, cameras, dust, tyre marks
+├── ui/               Chinese menus, HUD, stage selection, results
+├── presentation.ts   Fixed-step simulation, pose interpolation, frame pacing
+├── main.ts           Application lifecycle and integration
+├── input.ts          Keyboard and touch input
+├── audio.ts          Engine audio and co-driver speech
+├── settings.ts       Preferences and local records
+└── style.css         Interface styling and responsive layouts
+tests/                Node.js simulation and presentation checks
+docs/screenshots/     Shared screenshot assets and capture guide
+```
+
+Useful commands:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the development server on port 5175 |
+| `npm run typecheck` | Check TypeScript without emitting files |
+| `npm test` | Run the Node.js test suite |
+| `npm run build` | Type-check and build to `dist/` |
+| `npm run preview` | Serve the production build locally |
+
+The tests cover manual steering, sustained handbraking, speed limits, checkpoints, ranking, AI traffic, pause/restart, saves, camera stability, interpolation, and resource disposal. They run in Node.js without opening a browser or creating a WebGL context.
+
+**Project workflow:** do not launch the game for verification. Use the Node.js checks and production build.
+
+## Scope and troubleshooting
+
+This is an arcade rally game with AI opponents, not online multiplayer. AI drivers avoid traffic, but vehicle collision impulses, full tyre physics, suspension simulation, and collisions with scenery are not implemented.
+
+If the page reports that the graphics engine is unavailable, check WebGL 2 support and hardware acceleration in your browser. On a slower device, choose lightweight graphics and keep only one game tab open. Browser speech availability varies by platform.

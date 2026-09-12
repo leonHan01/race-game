@@ -53,3 +53,12 @@ test('replaced scenes release instance buffers and shared geometry, materials an
   disposeObject(root);
   assert.deepEqual(counts, { geometry: 1, material: 1, texture: 1, instances: 1 });
 });
+
+test('shared starting-grid lines release their geometry and material exactly once', () => {
+  const root = new THREE.Group(); const geometry = new THREE.BufferGeometry(); const material = new THREE.LineBasicMaterial();
+  for (let i = 0; i < 6; i++) root.add(new THREE.LineSegments(geometry, material));
+  let geometries = 0; let materials = 0;
+  geometry.addEventListener('dispose', () => geometries++); material.addEventListener('dispose', () => materials++);
+  disposeObject(root);
+  assert.equal(geometries, 1); assert.equal(materials, 1);
+});

@@ -1,14 +1,19 @@
 import { clamp, SECTORS, Track, type TrackPoint } from './track';
 import { getVehicle, type VehicleDefinition } from '../content/vehicles';
+import { Opponents } from './opponents';
 
 export const MAX_SPEED_KMH = 250;
+const NITRO_CAPACITY = 100;
+const NITRO_DRAIN_PER_SECOND = 25;
+const NITRO_CHARGE_PER_SECOND = 45;
+const NITRO_ACCELERATION = 24;
 
 const angleDifference = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
 export type Phase = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished';
 export type Difficulty = 'club' | 'pro';
-export interface Controls { throttle: boolean; brake: boolean; steering: number; drift: boolean }
-export const idleControls = (): Controls => ({ throttle: false, brake: false, steering: 0, drift: false });
+export interface Controls { throttle: boolean; brake: boolean; steering: number; drift: boolean; nitro: boolean }
+export const idleControls = (): Controls => ({ throttle: false, brake: false, steering: 0, drift: false, nitro: false });
 export interface Split { time: number; total: number; delta: number }
 
 export class Race {
@@ -26,6 +31,8 @@ export class Race {
   handbrakeHeldTime = 0;
   drifting = false;
   driftAngle = 0;
+  nitro = 0;
+  boosting = false;
   private driftDirection = 0;
   private driftEntrySpeed = 0;
   private releaseGripRate = 4.8;
@@ -39,8 +46,13 @@ export class Race {
   difficulty: Difficulty = 'club';
   autoThrottle = false;
   readonly targetTime: number;
+  readonly opponents: Opponents;
 
-  constructor(readonly track: Track, readonly vehicle: VehicleDefinition = getVehicle('falcon')) { this.targetTime = track.length / track.definition.goldSpeed; this.reset(); }
+  constructor(readonly track: Track, readonly vehicle: VehicleDefinition = getVehicle('falcon')) {
+    this.targetTime = track.length / track.definition.goldSpeed; this.opponents = new Opponents(track); this.reset();
+  }
+  get standings() { return this.opponents.standings(this); }
+  get rank() { return this.standings.findIndex(row => row.player) + 1; }
   get stageId() { return this.track.definition.id; }
   get vehicleId() { return this.vehicle.id; }
   get gearSpeed() { return this.vehicle.topSpeed / 6; }
@@ -56,6 +68,7 @@ export class Race {
   get nextNote() { return this.track.notes.find(note => note.distance > this.distance - 15); }
   get driftIntensity() { return clamp(Math.abs(this.driftAngle) / 0.65, 0, 1) * clamp(this.speed / 12, 0, 1); }
   get rearWheelSlip() { return Math.max(this.driftIntensity, this.handbrake ? clamp(this.speed / 30, 0, 0.65) : 0); }
+  get nitroCharging() { return this.phase === 'racing' && this.drifting && this.speed > 6 && this.driftIntensity > 0.08 && this.nitro < NITRO_CAPACITY; }
 
   /** Explicit placement for the starting grid and player-requested rescue only. */
   placeOnTrack(distance: number, lane = 0, heading = this.track.sample(distance).heading) {
@@ -69,10 +82,12 @@ export class Race {
     this.distance = 0; this.lane = 0; this.speed = 0; this.elapsed = 0;
     this.countdown = 3.6; this.drifting = false; this.driftAngle = 0; this.steerVisual = 0;
     this.handbrake = false; this.handbrakeHeldTime = 0;
+    this.nitro = 0; this.boosting = false;
     this.driftDirection = 0; this.driftEntrySpeed = 0; this.releaseGripRate = 4.8;
     this.lateralVelocity = 0; this.integrity = 100;
     this.splits = []; this.peakSpeed = 0; this.driftTime = 0; this.penalty = 0;
     this.placeOnTrack(0);
+    this.opponents.reset();
   }
   start() { this.reset(); this.phase = 'countdown'; }
   pause() {
@@ -80,6 +95,7 @@ export class Race {
       this.previousPhase = this.phase;
       this.phase = 'paused';
       this.drifting = false;
+      this.boosting = false;
       this.handbrake = false; this.handbrakeHeldTime = 0; this.driftDirection = 0;
     }
   }
@@ -89,6 +105,7 @@ export class Race {
     // If a gate was missed, rescue puts the car before that gate, never beyond it.
     this.placeOnTrack(clamp(Math.min(this.distance, this.nextCheckpointDistance - 8), 0, this.track.length));
     this.speed = Math.min(this.speed, 8);
+    this.boosting = false;
     this.drifting = false; this.driftAngle = 0; this.steerVisual = 0;
     this.handbrake = false; this.handbrakeHeldTime = 0;
     this.driftDirection = 0; this.driftEntrySpeed = 0; this.releaseGripRate = 4.8;
@@ -97,14 +114,15 @@ export class Race {
 
   /** Fixed-step arcade rally handling. All state is independent of WebGL. */
   update(dt: number, controls: Controls) {
+    if (dt <= 0) return;
     if (this.phase === 'countdown') {
       this.countdown -= dt;
       if (this.countdown <= 0) this.phase = 'racing';
       return;
     }
     if (this.phase !== 'racing') return;
+    const startTime = this.elapsed;
     this.elapsed += dt;
-    const throttle = controls.throttle || this.autoThrottle;
     // Keyboard and touch inputs share a progressive steering rack. Centre it
     // promptly on release, and pass through neutral when the player countersteers.
     const requestedSteering = clamp(controls.steering, -1, 1);
@@ -122,9 +140,14 @@ export class Race {
       if (this.driftDirection !== 0) this.driftEntrySpeed = this.speed;
     }
     const maximumSpeed = Math.min(MAX_SPEED_KMH, this.vehicle.topSpeed) / 3.6 * (0.75 + this.integrity * 0.0025);
+    // Use only the boost time the tank can fund, including a partial final tick.
+    const boostTime = controls.nitro && !controls.brake && !this.handbrake ? Math.min(dt, this.nitro / NITRO_DRAIN_PER_SECOND) : 0;
+    this.boosting = boostTime > 0;
+    this.nitro = clamp(this.nitro - boostTime * NITRO_DRAIN_PER_SECOND, 0, NITRO_CAPACITY);
+    const throttle = controls.throttle || this.autoThrottle || this.boosting;
     // A held handbrake always brakes, including against W or automatic throttle.
     const acceleration = controls.brake ? -this.vehicle.braking * Math.sqrt(this.track.definition.grip) : this.handbrake ? -18 : throttle ? this.vehicle.acceleration * (1 - this.speed / (this.vehicle.topSpeed / 3.6 * 1.0656)) : -5;
-    this.speed = clamp(this.speed + acceleration * dt, 0, maximumSpeed);
+    this.speed = clamp(this.speed + acceleration * dt + NITRO_ACCELERATION * boostTime, 0, maximumSpeed);
     this.drifting = this.handbrake && this.driftDirection !== 0 && this.speed > 0.5;
     if (this.drifting) this.driftTime += dt;
 
@@ -144,6 +167,9 @@ export class Race {
       this.driftAngle *= Math.exp(-dt * gripRate);
       if (Math.abs(this.driftAngle) < 0.001) this.driftAngle = 0;
     }
+    // Steering into a moving slide earns charge; straight handbraking and parked
+    // wheel lock do not. Braking and boosting cannot consume nitro together.
+    if (this.nitroCharging) this.nitro = Math.min(NITRO_CAPACITY, this.nitro + NITRO_CHARGE_PER_SECOND * this.driftIntensity * dt);
 
     // Player steering changes a world-space heading. Road curvature never feeds steering.
     const turnRate = Math.min(this.speed / 8, 1) * 0.95 * this.vehicle.steering / (1 + this.speed * 0.026);
@@ -155,6 +181,8 @@ export class Race {
     const before = { ...this.position };
     const previousLane = this.lane;
     this.position.x += vx * dt; this.position.z += vz * dt;
+    const clearance = Math.hypot(1.25 * this.vehicle.scale[0], 2.35 * this.vehicle.scale[2]);
+    if (this.track.confine(this.position, clearance)) this.speed *= Math.exp(-dt * 18);
     const road = this.track.project(this.position.x, this.position.z);
     this.distance = road.distance; this.lane = road.lane;
     this.position.y = this.track.surfaceHeight(this.position.x, this.position.z, road);
@@ -175,6 +203,8 @@ export class Race {
 
     this.peakSpeed = Math.max(this.peakSpeed, this.speed * 3.6);
     this.recordSplits(before, dt);
+    // Stop the shared race clock at the player's interpolated finish crossing.
+    this.opponents.update(this.elapsed - startTime, this, startTime);
   }
 
   private recordSplits(before: TrackPoint, dt: number) {
@@ -201,6 +231,7 @@ export class Race {
     }
     if (this.splits.length === SECTORS) {
       this.phase = 'finished'; this.drifting = false;
+      this.boosting = false;
       this.handbrake = false; this.handbrakeHeldTime = 0; this.driftDirection = 0;
       this.elapsed = this.splits[SECTORS - 1].total - this.penalty;
     }

@@ -83,7 +83,7 @@ test('snow reduces grip and braking and narrower roads enforce their own boundar
   const snow = drive('alpine'); const valley = drive('valley');
   assert.ok(snow.speed > valley.speed, 'snow needs a longer braking distance');
   assert.ok(Math.abs(snow.heading - snow.travelHeading) > Math.abs(valley.heading - valley.travelHeading));
-  assert.ok(drive('alpine', 5).integrity < drive('valley', 5).integrity);
+  assert.ok(drive('alpine', 8).integrity < drive('valley', 8).integrity);
 });
 
 test('each stage requires five ordered forward gates and can finish with every vehicle', () => {

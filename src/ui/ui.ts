@@ -47,6 +47,8 @@ export class UI {
   private phase = '';
   private lastSplit = 0;
   private lastPenalty = 0;
+  private nextLeaderboardUpdate = 0;
+  private leaderboardHTML = '';
   private toastTimer?: ReturnType<typeof setTimeout>;
   private cache = new Map<string, HTMLElement>();
 
@@ -58,7 +60,7 @@ export class UI {
       <div id="menu-shade" class="menu-shade" aria-hidden="true"></div>
       <header class="topbar">
         <button class="brand" data-action="home" aria-label="尘途拉力，返回主菜单"><span class="brand-mark"><i></i><i></i></span><span>DUSTLINE<small>尘途 · 拉力竞速</small></span></button>
-        <div id="menu-nav" class="menu-nav"><span class="nav-active">拉力计时赛</span><button data-action="stage">选择地图 <span>↗</span></button><button data-action="garage">车库 <span>↗</span></button></div>
+        <div id="menu-nav" class="menu-nav"><span class="nav-active">六车拉力竞速</span><button data-action="stage">选择地图 <span>↗</span></button><button data-action="garage">车库 <span>↗</span></button></div>
         <div class="top-actions"><span id="stage-tag" class="stage-tag"><i></i> OFFLINE RALLY</span><button class="icon-button" id="sound-toggle" data-action="sound" aria-label="关闭声音">${icon('sound')}</button><button class="icon-button" data-action="settings" aria-label="游戏设置">${icon('settings')}</button><button class="icon-button hidden" id="pause-button" data-action="pause" aria-label="暂停比赛">${icon('pause')}</button></div>
       </header>
       <main id="menu" class="menu">
@@ -66,7 +68,7 @@ export class UI {
           <div class="eyebrow"><span class="tiny-line"></span> THE RALLY EXPERIENCE <span class="edition">VOL. 01</span></div>
           <h1>DUST &amp;<br><span>GLORY.</span><span class="title-period"></span></h1>
           <h2>越过尘土，驶向山野。</h2>
-          <p class="hero-copy">从绿谷出发，去往峡谷与雪岭。<br>每一段路，都有自己的驾驶节奏。</p>
+          <p class="hero-copy">与 5 位车手同场出发，争夺领先。<br>宽阔赛道，留下你的超车路线。</p>
           <div class="start-row"><button id="start-button" class="primary-button" data-action="start"><span>开始赛段 <small>START YOUR ENGINE</small></span>${icon('arrow')}</button><button class="help-button" data-action="controls"><span class="key-cap">?</span> 驾驶指南</button></div>
           <div class="selection-actions"><button data-action="stage">选择地图 <span id="selected-stage">4 个赛段 ↗</span></button><button data-action="garage">选择车辆 <span id="selected-vehicle">4 种车型 ↗</span></button></div>
         </section>
@@ -76,6 +78,7 @@ export class UI {
       </main>
       <section id="hud" class="hud hidden" aria-label="比赛仪表">
         <div class="stage-clock"><span id="hud-stage" class="eyebrow"></span><div id="race-time">00:00.00</div><p>个人最佳 <strong id="best-time">—:——.——</strong></p></div>
+        <aside class="race-order" aria-label="实时竞速名次"><span class="eyebrow">POSITION</span><div><strong id="race-rank">6</strong><span> / 6</span></div><ol id="race-leaderboard"></ol></aside>
         <div class="stage-progress"><div><span>STAGE PROGRESS</span><strong id="progress-label">0%</strong></div><div class="progress-track"><i id="progress-fill"></i>${[1,2,3,4].map(i => `<span style="left:${i * 20}%"></span>`).join('')}</div></div>
         <div id="pace-note" class="pace-note hidden"><div class="pace-symbol" id="pace-arrow">↱</div><div><strong id="pace-grade">4</strong><span id="pace-direction">右弯</span></div><span class="pace-distance" id="pace-distance">100 M</span></div>
         <div class="race-map"><span class="eyebrow"><span id="map-stage-name">PINE RIDGE</span><span id="sector-label">01 / 05</span></span>${this.mapSVG('race-map')}<div class="condition"><span>车辆状态</span><div><i id="condition-fill"></i></div><strong id="condition-label">100%</strong></div></div>
@@ -83,7 +86,7 @@ export class UI {
         <div class="driving-hint" id="driving-hint"><kbd>W</kbd> 油门 <kbd>S</kbd> 刹车 <kbd>A</kbd><kbd>D</kbd> 转向 <kbd>SPACE</kbd> 手刹</div>
         <div class="touch-controls"><div><button data-control="ArrowLeft" aria-label="左转">←</button><button data-control="ArrowRight" aria-label="右转">→</button></div><div><button data-control="Space" class="touch-handbrake" aria-label="手刹">手刹</button><button data-control="ArrowDown" aria-label="刹车">刹车</button><button data-control="ArrowUp" class="touch-throttle" aria-label="油门">油门</button></div></div>
       </section>
-      <div id="countdown" class="countdown hidden" role="status"><span>READY TO GET DIRTY?</span><strong id="countdown-number">3</strong><p>握紧方向，前方是你的赛道。</p></div>
+      <div id="countdown" class="countdown hidden" role="status"><span>READY TO GET DIRTY?</span><strong id="countdown-number">3</strong><p>六车同场 · 倒计时结束一起发车。</p></div>
       <div id="toast" class="toast hidden" role="status"></div>
       <dialog id="dialog"><button class="dialog-close icon-button" data-action="close" aria-label="关闭弹窗">${icon('close')}</button><div id="dialog-content"></div></dialog>
       <div id="loading" class="loading"><span class="brand-mark"><i></i><i></i></span><strong>准备进入山野</strong><span>正在铺设砂石赛道…</span><div class="loading-bar"></div></div>
@@ -160,6 +163,7 @@ export class UI {
   update(race: Race) {
     if (this.phase !== race.phase) {
       this.phase = race.phase;
+      this.nextLeaderboardUpdate = 0;
       const menu = race.phase === 'menu';
       this.get('menu').classList.toggle('hidden', !menu); this.get('menu-shade').classList.toggle('hidden', !menu);
       this.get('menu-nav').classList.toggle('hidden', !menu); this.get('stage-tag').classList.toggle('hidden', !menu);
@@ -173,6 +177,13 @@ export class UI {
     if (race.phase === 'countdown') this.set('countdown-number', race.countdown > 3 ? '•' : String(Math.ceil(Math.max(0, race.countdown))));
     if (race.phase === 'menu') return;
     this.set('race-time', formatTime(race.totalTime));
+    const standings = race.standings;
+    this.set('race-rank', String(standings.findIndex(row => row.player) + 1));
+    if (race.elapsed >= this.nextLeaderboardUpdate) {
+      const board = standings.map((row, i) => `<li class="${row.player ? 'is-player' : ''}"><span>${i + 1}</span><i style="background:${row.color}"></i><strong>${row.name}</strong><small>${row.finishTime !== null ? '完赛' : row.player ? '你' : `${Math.round(Math.abs(row.distance - race.distance))} m`}</small></li>`).join('');
+      if (this.leaderboardHTML !== board) { this.get('race-leaderboard').innerHTML = board; this.leaderboardHTML = board; }
+      this.nextLeaderboardUpdate = race.elapsed + 0.15;
+    }
     this.set('speed', Math.round(race.speed * 3.6).toString().padStart(3, '0'));
     const gear = race.gear;
     this.set('gear', gear === 0 ? 'N' : String(gear));
@@ -214,9 +225,9 @@ export class UI {
   openDialog(type: 'settings' | 'stage' | 'garage' | 'controls' | 'pause' | 'results', race: Race, newRecord = false) {
     let content = '';
     if (type === 'settings') {
-      content = `<span class="eyebrow">MAKE IT YOURS</span><h2>驾驶偏好</h2><p class="dialog-intro">找到属于你的驾驶节奏。</p><div class="setting-row"><div><strong>画面质量</strong><small>轻量模式减少植被和像素密度</small></div><select id="quality-setting" aria-label="画面质量"><option value="standard" ${settings.quality === 'standard' ? 'selected' : ''}>标准</option><option value="low" ${settings.quality === 'low' ? 'selected' : ''}>轻量</option></select></div><div class="setting-row"><div><strong>驾驶难度</strong><small>专业模式抓地力更低，转向惯性更明显 · 下次发车生效</small></div><select id="difficulty-setting" aria-label="驾驶难度"><option value="club" ${settings.difficulty === 'club' ? 'selected' : ''}>俱乐部</option><option value="pro" ${settings.difficulty === 'pro' ? 'selected' : ''}>专业</option></select></div>${this.toggle('autoThrottle', '自动油门', '只需专注转向和刹车 · 下次发车生效')}${this.toggle('sound', '引擎与路面音效', '感受转速变化与砂石摩擦')}${this.toggle('voice', '领航员语音', '中文路书播报，语音可用性取决于浏览器')}<button class="primary-button dialog-primary" data-action="close">保存并返回 ${icon('arrow')}</button>`;
+      content = `<span class="eyebrow">MAKE IT YOURS</span><h2>驾驶偏好</h2><p class="dialog-intro">找到属于你的驾驶节奏。</p><div class="setting-row"><div><strong>画面质量</strong><small>轻量模式减少植被和像素密度</small></div><select id="quality-setting" aria-label="画面质量"><option value="standard" ${settings.quality === 'standard' ? 'selected' : ''}>标准</option><option value="low" ${settings.quality === 'low' ? 'selected' : ''}>轻量</option></select></div><div class="setting-row"><div><strong>驾驶难度</strong><small>专业模式抓地力更低，对手节奏更快 · 下次发车生效</small></div><select id="difficulty-setting" aria-label="驾驶难度"><option value="club" ${settings.difficulty === 'club' ? 'selected' : ''}>俱乐部</option><option value="pro" ${settings.difficulty === 'pro' ? 'selected' : ''}>专业</option></select></div>${this.toggle('autoThrottle', '自动油门', '只需专注转向和刹车 · 下次发车生效')}${this.toggle('sound', '引擎与路面音效', '感受转速变化与砂石摩擦')}${this.toggle('voice', '领航员语音', '中文路书播报，语音可用性取决于浏览器')}<button class="primary-button dialog-primary" data-action="close">保存并返回 ${icon('arrow')}</button>`;
     } else if (type === 'controls') {
-      content = `<span class="eyebrow">DRIVER BRIEFING</span><h2>每一道弯，都有章法。</h2><p class="dialog-intro">松开油门入弯，找准路线，再全力出弯。</p><div class="controls-list"><div><span><kbd>W</kbd> / <kbd>↑</kbd></span><strong>踩下油门</strong></div><div><span><kbd>S</kbd> / <kbd>↓</kbd></span><strong>刹车减速</strong></div><div><span><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd></span><strong>控制车头方向 · 无自动转弯</strong></div><div><kbd>SPACE</kbd><strong>按住持续手刹 · 松开释放</strong></div><div><kbd>C</kbd><strong>赛道追尾 / 低位视角</strong></div><div><kbd>R</kbd><strong>救援回赛道 · 罚时 5 秒</strong></div><div><kbd>ESC</kbd><strong>暂停 / 继续</strong></div></div><p class="driver-tip">车辆不会自动跟随赛道转弯。按 A / D 渐进转向，松开后转向力度平滑归零。镜头沿前方道路取景，车头可以独立偏转。<br>空格按住越久，甩尾幅度越大；入漂后松开方向仍会侧滑，松开空格才回正。一直拉手刹会减速直至停车。<br>路书中的数字表示弯道速度等级：<b>2–3 为急弯，4–5 为快弯</b>。路肩会损伤车辆并降低极速，入弯前提前刹车。触屏设备使用屏幕底部按钮。</p><button class="primary-button dialog-primary" data-action="close">准备好了 ${icon('arrow')}</button>`;
+      content = `<span class="eyebrow">DRIVER BRIEFING</span><h2>每一道弯，都有章法。</h2><p class="dialog-intro">松开油门入弯，找准路线，再全力出弯。</p><div class="controls-list"><div><span><kbd>W</kbd> / <kbd>↑</kbd></span><strong>踩下油门</strong></div><div><span><kbd>S</kbd> / <kbd>↓</kbd></span><strong>刹车减速</strong></div><div><span><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd></span><strong>控制车头方向 · 无自动转弯</strong></div><div><kbd>SPACE</kbd><strong>按住持续手刹 · 松开释放</strong></div><div><kbd>C</kbd><strong>赛道追尾 / 低位视角</strong></div><div><kbd>R</kbd><strong>救援回赛道 · 罚时 5 秒</strong></div><div><kbd>ESC</kbd><strong>暂停 / 继续</strong></div></div><p class="driver-tip">与 5 辆 AI 对手同场竞速，名次按冲线顺序确定。AI 会减速入弯、跟车和寻找空位超车。<br>你的车辆不会自动跟随赛道转弯。按 A / D 渐进转向，松开后转向力度平滑归零。镜头沿前方道路取景，车头可以独立偏转。<br>空格按住越久，甩尾幅度越大；入漂后松开方向仍会侧滑，松开空格才回正。一直拉手刹会减速直至停车。<br>路书中的数字表示弯道速度等级：<b>2–3 为急弯，4–5 为快弯</b>。路肩会损伤车辆并降低极速，入弯前提前刹车。触屏设备使用屏幕底部按钮。</p><button class="primary-button dialog-primary" data-action="close">准备好了 ${icon('arrow')}</button>`;
     } else if (type === 'stage') {
       content = `<span class="eyebrow">CHOOSE YOUR STAGE / 04 ROUTES</span><h2>下一站，驶向哪里。</h2><p class="dialog-intro">${race.phase === 'menu' ? '选择赛段后返回发车区。地图难度由弯道、路宽和抓地力共同决定。' : '当前比赛已暂停；返回主菜单后可切换地图。'}</p><div class="catalog-grid">${STAGES.map(stage => {
         const track = new Track(stage);
@@ -234,7 +245,7 @@ export class UI {
       content = `<span class="eyebrow">TAKE A BREATHER</span><h2>山野，等你回来。</h2><p class="dialog-intro">比赛已暂停。${Math.floor(race.progress * 100)}% 赛段完成 · ${formatTime(race.totalTime)}</p><div class="pause-actions"><button class="primary-button" data-action="resume">继续驾驶 ${icon('arrow')}</button><button class="secondary-button" data-action="restart">重新发车 ${icon('reset')}</button><button class="secondary-button" data-action="controls">驾驶指南</button><button class="text-button" data-action="home">返回主菜单</button></div>`;
     } else {
       const medal = { gold: '金牌', silver: '银牌', bronze: '铜牌' }[race.medal];
-      content = `<span class="eyebrow">STAGE COMPLETE / ${newRecord ? 'NEW PERSONAL BEST' : race.track.definition.english}</span><div class="result-medal">${icon('flag')}<span>${medal}完赛</span></div><h2>把尘土留在身后。</h2><p class="dialog-intro">${race.track.definition.name} · ${race.vehicle.name}</p><div class="result-time">${formatTime(race.totalTime)}</div><p class="result-note">${newRecord ? '新的个人最佳。下一次，再快一点。' : `个人最佳 ${formatTime(bestTime(race))} · 下一个弯，继续突破。`}</p><div class="result-stats"><div><span>最高时速</span><strong>${Math.round(race.peakSpeed)} <small>KM/H</small></strong></div><div><span>车辆状态</span><strong>${Math.round(race.integrity)}<small>%</small></strong></div><div><span>救援罚时</span><strong>+${race.penalty}<small>S</small></strong></div></div><div class="split-list">${race.splits.map((split, i) => `<div><span>SECTOR 0${i + 1}</span><strong>${formatTime(split.time)}</strong><span class="${split.delta <= 0 ? 'ahead' : 'behind'}">${split.delta > 0 ? '+' : '−'}${Math.abs(split.delta).toFixed(2)}s</span></div>`).join('')}</div><div class="result-actions"><button class="primary-button" data-action="restart">再次挑战 ${icon('arrow')}</button><button class="secondary-button" data-action="home">返回主菜单</button></div>`;
+      content = `<span class="eyebrow">STAGE COMPLETE / ${newRecord ? 'NEW PERSONAL BEST' : race.track.definition.english}</span><div class="result-medal">${icon('flag')}<span>${medal}完赛</span></div><h2>${race.rank === 1 ? '拿下这一站！' : `第 ${race.rank} 名冲线。`}</h2><p class="dialog-intro">${race.track.definition.name} · ${race.vehicle.name}</p><div class="finish-rank">P${race.rank}<small> / 6 · 冲线名次</small></div><div class="result-time">${formatTime(race.totalTime)}</div><p class="result-note">${newRecord ? '新的个人最佳。下一次，再快一点。' : `个人最佳 ${formatTime(bestTime(race))} · 下一个弯，继续突破。`}</p><div class="result-stats"><div><span>最高时速</span><strong>${Math.round(race.peakSpeed)} <small>KM/H</small></strong></div><div><span>车辆状态</span><strong>${Math.round(race.integrity)}<small>%</small></strong></div><div><span>救援罚时</span><strong>+${race.penalty}<small>S</small></strong></div></div><div class="finish-order">${race.standings.map((row, i) => `<div class="${row.player ? 'is-player' : ''}"><b>${i + 1}</b><i style="background:${row.color}"></i><span>${row.name}<small>${row.vehicle}</small></span><strong>${row.finishTime !== null ? formatTime(row.finishTime) : `${Math.floor(row.distance / race.track.length * 100)}% · 未完赛`}</strong></div>`).join('')}</div><p class="driver-tip">名次按冲线顺序确定；未完赛车辆显示你冲线时的进度。救援罚时计入个人计时成绩。</p><div class="split-list">${race.splits.map((split, i) => `<div><span>SECTOR 0${i + 1}</span><strong>${formatTime(split.time)}</strong><span class="${split.delta <= 0 ? 'ahead' : 'behind'}">${split.delta > 0 ? '+' : '−'}${Math.abs(split.delta).toFixed(2)}s</span></div>`).join('')}</div><div class="result-actions"><button class="primary-button" data-action="restart">再次挑战 ${icon('arrow')}</button><button class="secondary-button" data-action="home">返回主菜单</button></div>`;
     }
     this.get('dialog-content').innerHTML = content;
     this.dialog.dataset.page = type;

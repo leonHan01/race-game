@@ -15,6 +15,7 @@ function cameraHarness(track: Track): RallyRenderer {
     track, contextAvailable: true,
     camera: new THREE.PerspectiveCamera(64, 1, 0.12, 6500),
     car: { group: new THREE.Group(), update() {}, setLivery() {} },
+    rivals: { update() {} },
     rearLeft: new THREE.Vector3(), rearRight: new THREE.Vector3(),
     targetPosition: new THREE.Vector3(), targetLook: new THREE.Vector3(),
     sky: new THREE.Object3D(), skidMarks: { update() {} }, updateDust() {},
@@ -68,8 +69,8 @@ test('camera remains at a fixed distance from the car as frame times change', ()
 test('crossing the gravel shoulder does not introduce a height step', () => {
   const track = new Track();
   for (const side of [-1, 1]) {
-    const inside = track.position(200, side * 7.999);
-    const outside = track.position(200, side * 8.001);
+    const inside = track.position(200, side * (track.shoulderEdge - 0.001));
+    const outside = track.position(200, side * (track.shoulderEdge + 0.001));
     const jump = Math.abs(track.surfaceHeight(inside.x, inside.z) - track.surfaceHeight(outside.x, outside.z));
     assert.ok(jump < 0.02, `2 mm of sideways movement changes height by ${jump.toFixed(3)} m`);
   }

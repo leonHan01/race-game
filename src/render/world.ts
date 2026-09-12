@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SECTORS, Track } from '../simulation/track';
 import { terrainNoise as noise, terrainOffset as terrainHeight, shoulderBlend } from '../simulation/ground';
+import { startingGrid } from '../simulation/opponents';
+import { ribbon } from './road';
+import { buildIndoorVenue } from './venue';
+
+export interface WorldScenery { crowns?: THREE.InstancedMesh; trunks?: THREE.InstancedMesh; rocks?: THREE.InstancedMesh; treeCount: number }
 
 function randomSource(seed = 48) {
   return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
@@ -23,23 +28,6 @@ function gravelTexture(snow = false) {
   return texture;
 }
 
-function ribbon(track: Track, left: number, right: number, y: number | ((lane: number) => number), material: THREE.Material, step = 5) {
-  const vertices: number[] = []; const uvs: number[] = []; const indices: number[] = [];
-  const count = Math.ceil((track.length + 230) / step);
-  for (let i = 0; i <= count; i++) {
-    const d = -130 + i * step;
-    for (const lane of [left, right]) {
-      const p = track.position(d, lane);
-      vertices.push(p.x, p.y + (typeof y === 'number' ? y : y(lane)), p.z); uvs.push((lane - left) / 5, d / 5);
-    }
-    if (i < count) { const n = i * 2; indices.push(n, n + 1, n + 2, n + 1, n + 3, n + 2); }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices); geometry.computeVertexNormals();
-  return new THREE.Mesh(geometry, material);
-}
 
 function signTexture(text: string, subtext: string, background = '#e5b644') {
   const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 256;
@@ -51,7 +39,8 @@ function signTexture(text: string, subtext: string, background = '#e5b644') {
   return texture;
 }
 
-export function buildWorld(scene: THREE.Object3D, track: Track) {
+export function buildWorld(scene: THREE.Object3D, track: Track): WorldScenery {
+  if (track.definition.venue) { buildIndoorVenue(scene, track); buildCourseFurniture(scene, track); return { treeCount: 0 }; }
   const random = randomSource(734);
   const theme = track.definition.theme;
   const edge = track.shoulderEdge;
@@ -161,6 +150,12 @@ export function buildWorld(scene: THREE.Object3D, track: Track) {
     mountain.rotation.y = random() * 6.28; scene.add(mountain);
   }
 
+  buildCourseFurniture(scene, track);
+  return { crowns, trunks, rocks, treeCount };
+}
+
+function buildCourseFurniture(scene: THREE.Object3D, track: Track) {
+  const width = track.roadWidth; const edge = track.shoulderEdge; const transform = new THREE.Object3D();
   // Roadside markers use two instanced batches for the whole stage.
   const markerCount = Math.floor(track.length / 18) * 2;
   const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.9, 0.13), new THREE.MeshStandardMaterial({ color: '#e4dfcd', roughness: 1 }), markerCount);
@@ -187,6 +182,14 @@ export function buildWorld(scene: THREE.Object3D, track: Track) {
   }
   arch(18, 'DUSTLINE', `${track.definition.english}  /  START`);
   arch(track.length - 4, 'FINISH', 'DUSTLINE RALLY CLUB');
+  const gridMaterial = new THREE.LineBasicMaterial({ color: '#e7dcb4', transparent: true, opacity: 0.75 });
+  const gridPlane = new THREE.PlaneGeometry(2.9, 5.4);
+  const gridGeometry = new THREE.EdgesGeometry(gridPlane); gridPlane.dispose();
+  for (const slot of startingGrid(track)) {
+    const p = track.position(slot.distance, slot.lane); const frame = track.sample(slot.distance);
+    const outline = new THREE.LineSegments(gridGeometry, gridMaterial);
+    outline.rotation.set(-Math.PI / 2, frame.heading, 0, 'YXZ'); outline.position.set(p.x, p.y + 0.09, p.z); scene.add(outline);
+  }
 
   const stripeMaterial = new THREE.MeshBasicMaterial({ color: '#e8dfc7', side: THREE.DoubleSide });
   for (const d of [18, track.length - 4]) {
@@ -208,5 +211,4 @@ export function buildWorld(scene: THREE.Object3D, track: Track) {
     const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 3.1), new THREE.MeshStandardMaterial({ map: signTexture('D /', 'RALLY CLUB'), side: THREE.DoubleSide, roughness: 1 }));
     flag.position.set(p.x + 0.58, p.y + 3.3, p.z); flag.rotation.y = -0.2; scene.add(flag);
   }
-  return { crowns, trunks, rocks, treeCount };
 }
