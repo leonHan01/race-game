@@ -1,6 +1,8 @@
-import { getVehicle, type VehicleDefinition } from '../content/vehicles';
+import { getVehicle, LONGBOARDS, type VehicleDefinition, type VehicleMode } from '../content/vehicles';
 import { clamp, type Track, type TrackPoint } from './track';
 import type { Race } from './race';
+import { longboardAcceleration } from './longboard';
+import { VerticalMotion } from './vertical-motion';
 
 export const RIVAL_DRIVERS = [
   { id: 'rival-1', name: '林岳', vehicle: 'falcon', color: '#d77850', pace: 1.01 },
@@ -9,11 +11,15 @@ export const RIVAL_DRIVERS = [
   { id: 'rival-4', name: '苏禾', vehicle: 'nomad', color: '#80a17d', pace: 1.04 },
   { id: 'rival-5', name: '周野', vehicle: 'falcon', color: '#b592b7', pace: 0.94 },
 ] as const;
-export interface RivalPose { position: TrackPoint; heading: number; speed: number; steering: number }
+export const rivalDrivers = (mode: VehicleMode) => RIVAL_DRIVERS.map((driver, i) => ({
+  ...driver, vehicle: mode === 'longboard' ? LONGBOARDS[i % LONGBOARDS.length] : getVehicle(mode === 'motorcycle' ? (i % 2 === 0 ? 'apex' : 'trail') : driver.vehicle),
+}));
+export interface RivalPose { position: TrackPoint; heading: number; speed: number; steering: number; pitch: number; airHeight: number; airborne: boolean }
 export interface Rival extends RivalPose {
   id: string; name: string; color: string; vehicle: VehicleDefinition; pace: number;
   distance: number; lane: number; targetLane: number; planIn: number;
   finishTime: number | null; braking: boolean;
+  vertical: VerticalMotion;
 }
 export interface Standing { id: string; name: string; color: string; vehicle: string; distance: number; finishTime: number | null; player: boolean }
 interface Traffic { distance: number; lane: number; targetLane: number; speed: number; id: string }
@@ -27,11 +33,12 @@ export const startingGrid = (track: Track) => {
 export class Opponents {
   readonly cars: Rival[];
   private readonly laneSpacing: number;
-  constructor(readonly track: Track) {
+  constructor(readonly track: Track, mode: VehicleMode = 'car') {
     this.laneSpacing = Math.min(4.2, track.roadWidth * 0.28);
-    this.cars = RIVAL_DRIVERS.map(driver => ({ ...driver, vehicle: getVehicle(driver.vehicle),
+    this.cars = rivalDrivers(mode).map(driver => ({ ...driver,
       position: { x: 0, y: 0, z: 0 }, heading: 0, speed: 0, steering: 0, distance: 0, lane: 0,
-      targetLane: 0, planIn: 0, finishTime: null, braking: false }));
+      targetLane: 0, planIn: 0, finishTime: null, braking: false,
+      pitch: 0, airHeight: 0, airborne: false, vertical: new VerticalMotion() }));
     this.reset();
   }
   reset() {
@@ -42,6 +49,8 @@ export class Opponents {
       car.speed = 0; car.steering = 0; car.braking = false; car.finishTime = null;
       Object.assign(car.position, this.track.position(car.distance, car.lane));
       car.heading = this.track.sample(car.distance).heading;
+      car.pitch = this.track.hasJumps ? Math.atan(this.track.grade(car.distance)) : 0;
+      car.airHeight = 0; car.airborne = false; car.vertical.reset(car.position.y, car.pitch);
     });
   }
 
@@ -79,6 +88,7 @@ export class Opponents {
   }
 
   update(dt: number, player: Race, startTime: number) {
+    if (dt <= 0) return;
     // Snapshot traffic first: the result does not depend on opponent iteration order.
     const traffic: Traffic[] = this.cars.filter(car => car.finishTime === null).map(car => ({ id: car.id, distance: car.distance, lane: car.lane, targetLane: car.targetLane, speed: car.speed }));
     if (Math.abs(player.lane) < this.track.roadWidth / 2 + 1.5) {
@@ -91,6 +101,10 @@ export class Opponents {
       car.planIn -= dt;
       if (car.planIn <= 0) { this.chooseLane(car, traffic); car.planIn = 0.45; }
       let target = this.targetSpeed(car, player.difficulty === 'pro');
+      const itemState = player.mode === 'items' ? player.items.state(car.id) : null;
+      const itemBoost = itemState && itemState.boost > 0 && itemState.stun <= 0;
+      if (itemBoost) target = Math.min(car.vehicle.topSpeed / 3.6, target + 12);
+      if (itemState && itemState.stun > 0) target = 3;
       let available = Infinity;
       for (const other of traffic) {
         if (other.id === car.id) continue;
@@ -102,7 +116,12 @@ export class Opponents {
           available = Math.min(available, Math.max(0, gap - 5.5));
         }
       }
-      const acceleration = clamp((target - car.speed) * 2, -car.vehicle.braking, car.vehicle.acceleration * (1 - car.speed / (car.vehicle.topSpeed / 3.6 * 1.1)));
+      let acceleration = clamp((target - car.speed) * 2, -car.vehicle.braking, car.vehicle.acceleration * (1 - car.speed / (car.vehicle.topSpeed / 3.6 * 1.1)) + (itemBoost ? 24 : 0));
+      if (car.vehicle.mode === 'longboard') {
+        const natural = longboardAcceleration(car.speed, this.track.grade(car.distance), car.speed < 9, car.speed >= 9, false, false, 1, car.vehicle);
+        acceleration = Math.min(natural * car.pace, clamp((target - car.speed) * 2, -car.vehicle.braking, 5));
+      }
+      if (car.airborne) acceleration = -car.speed * 0.035;
       car.braking = acceleration < -2;
       car.speed = clamp(car.speed + acceleration * dt, 0, car.vehicle.topSpeed / 3.6);
       const previousDistance = car.distance;
@@ -111,6 +130,7 @@ export class Opponents {
       car.distance = Math.min(this.track.length, car.distance + advance);
       const previousLane = car.lane;
       let laneStep = clamp(car.targetLane - car.lane, -2.1 * dt, 2.1 * dt) * Math.min(1, car.speed / 5);
+      if (car.airborne) laneStep = 0;
       for (const other of traffic) {
         if (other.id !== car.id && Math.abs(other.distance - car.distance) < 6
           && Math.abs(other.lane - car.lane - laneStep) < 2.7 && (other.lane - car.lane) * laneStep > 0) {
@@ -124,6 +144,14 @@ export class Opponents {
       car.heading += Math.atan2(Math.sin(heading - car.heading), Math.cos(heading - car.heading)) * (1 - Math.exp(-dt * 9));
       car.steering = clamp(-this.track.curvature(car.distance) * 35 + laneSpeed * 0.2, -1, 1);
       Object.assign(car.position, this.track.position(car.distance, car.lane));
+      if (this.track.hasJumps) {
+        car.vertical.update(dt, { height: car.position.y, speed: car.speed,
+          launchVelocity: this.track.grade(previousDistance, 1.3) * car.speed,
+          groundVelocity: this.track.grade(car.distance, 1.3) * car.speed,
+          pitch: Math.atan(this.track.grade(car.distance, 1.3)) });
+        car.position.y = car.vertical.height; car.pitch = car.vertical.pitch;
+        car.airHeight = car.vertical.clearance; car.airborne = car.vertical.airborne;
+      }
       if (car.distance >= this.track.length) {
         const fraction = advance > 0 ? (this.track.length - previousDistance) / advance : 1;
         car.finishTime = startTime + dt * clamp(fraction, 0, 1); car.speed = 0; car.braking = true;

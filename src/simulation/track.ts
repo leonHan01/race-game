@@ -25,6 +25,7 @@ export class Track {
 
   get roadWidth() { return this.definition.roadWidth; }
   get shoulderEdge() { return this.roadWidth / 2 + 2.5; }
+  get hasJumps() { return Boolean(this.definition.jumps?.length); }
 
   constructor(readonly definition: StageDefinition = getStage('pine')) {
     const controls = definition.points;
@@ -86,8 +87,21 @@ export class Track {
     const tx = (q.x - p.x) / len;
     const tz = (q.z - p.z) / len;
     const extension = distance < 0 ? distance : distance > this.length ? distance - this.length : 0;
-    return { x: p.x + (q.x - p.x) * f + tx * extension, y: p.y + (q.y - p.y) * f, z: p.z + (q.z - p.z) * f + tz * extension,
+    // Rendered ribbons, tyres, AI and collision height read the same crest profile.
+    let elevation = p.y + (q.y - p.y) * f;
+    for (const crest of this.definition.jumps ?? []) {
+      const offset = distance - crest.distance;
+      const span = offset < 0 ? crest.approach : crest.landing;
+      if (Math.abs(offset) < span) elevation += crest.height * (1 + Math.cos(Math.PI * offset / span)) / 2;
+    }
+    return { x: p.x + (q.x - p.x) * f + tx * extension, y: elevation, z: p.z + (q.z - p.z) * f + tz * extension,
       tx, tz, rx: -tz, rz: tx, heading: Math.atan2(-tx, -tz) };
+  }
+
+  grade(distance: number, span = 5): number {
+    const start = clamp(distance - span, 0, this.length - 0.01);
+    const end = clamp(distance + span, start + 0.01, this.length);
+    return (this.sample(end).y - this.sample(start).y) / (end - start);
   }
 
   curvature(distance: number): number {
@@ -122,8 +136,9 @@ export class Track {
     return { ...frame, distance, lane: (x - frame.x) * frame.rx + (z - frame.z) * frame.rz };
   }
 
-  surfaceHeight(x: number, z: number, projection = this.project(x, z)): number {
+  surfaceHeight(x: number, z: number, projection?: TrackProjection): number {
     if (this.venueBounds) return this.venueBounds.floor;
+    projection ??= this.project(x, z);
     // Blend down to the heightfield instead of dropping 1.1 m at the shoulder edge.
     return projection.y + terrainOffset(x, z, projection.lane) * shoulderBlend(projection.lane, this.shoulderEdge);
   }

@@ -7,6 +7,8 @@ import { Track } from '../src/simulation/track.ts';
 import { settings } from '../src/settings.ts';
 import { RaceTimeline } from '../src/presentation.ts';
 import { STAGES, getStage } from '../src/content/stages.ts';
+import { SprintView } from '../src/render/sprint-view.ts';
+import { ExhaustFlames } from '../src/render/exhaust-flames.ts';
 
 // Exercise the production scene/camera update with GPU submission and assets omitted.
 // No browser, canvas, WebGL context, or game server is created.
@@ -14,6 +16,7 @@ function cameraHarness(track: Track): RallyRenderer {
   return Object.assign(Object.create(RallyRenderer.prototype), {
     track, contextAvailable: true,
     camera: new THREE.PerspectiveCamera(64, 1, 0.12, 6500),
+    sprintView: new SprintView(),
     car: { group: new THREE.Group(), update() {}, setLivery() {} },
     rivals: { update() {} },
     rearLeft: new THREE.Vector3(), rearRight: new THREE.Vector3(),
@@ -42,6 +45,48 @@ test('both cameras face the road ahead while the car can turn independently in t
     }
   }
   settings.camera = 0;
+});
+
+test('nitro widens and compresses both camera views smoothly without moving their anchors or horizon', () => {
+  const track = new Track(); const race = new Race(track); race.phase = 'racing'; race.speed = 80;
+  for (const camera of [0, 1]) {
+    settings.camera = camera;
+    const view = cameraHarness(track);
+    race.boosting = false; view.render(race, idleControls(), 1 / 60);
+    const position = view.camera.position.clone(); const rotation = view.camera.quaternion.clone();
+    const baseFov = view.camera.fov;
+    race.boosting = true; view.render(race, idleControls(), 1 / 60);
+    assert.ok(view.camera.fov > baseFov && view.camera.fov < baseFov + 4, 'smooth attack');
+    for (let i = 0; i < 60; i++) view.render(race, idleControls(), 1 / 60);
+    assert.ok(view.camera.fov > baseFov + 17 && view.camera.fov <= baseFov + 18);
+    assert.deepEqual(view.camera.position, position); assert.ok(view.camera.quaternion.equals(rotation));
+    const uncompressed = new THREE.PerspectiveCamera(view.camera.fov, view.camera.aspect, view.camera.near, view.camera.far);
+    assert.ok(view.camera.projectionMatrix.elements[0] < uncompressed.projectionMatrix.elements[0] * 0.95);
+    const identity = view.camera.projectionMatrix.clone().multiply(view.camera.projectionMatrixInverse);
+    identity.elements.forEach((value, i) => assert.ok(Math.abs(value - (i % 5 === 0 ? 1 : 0)) < 1e-9));
+    race.boosting = false; view.render(race, idleControls(), 1 / 60);
+    assert.ok(view.camera.fov > baseFov + 12, 'smooth release');
+    for (let i = 0; i < 120; i++) view.render(race, idleControls(), 1 / 60);
+    assert.equal(view.camera.fov, baseFov);
+  }
+  settings.camera = 0;
+});
+
+test('pause, finish, menu, reduced motion and airborne poses clear or suppress sprint presentation', () => {
+  const race = new Race(new Track()); const view = cameraHarness(race.track);
+  const exhaust = new ExhaustFlames([[0, 0.5, 2.2]]);
+  Object.assign(view.car, { exhaust });
+  for (const phase of ['paused', 'finished', 'menu', 'countdown'] as const) {
+    race.phase = 'racing'; race.boosting = true; view.render(race, idleControls(), 0.1);
+    assert.ok(exhaust.group.visible && view.camera.fov > 64);
+    race.phase = phase; view.render(race, idleControls(), 0.1);
+    assert.equal(exhaust.group.visible, false); assert.equal(view.camera.fov, phase === 'menu' ? 44 : 64);
+  }
+  race.phase = 'racing'; race.boosting = true;
+  Object.assign(view, { motionPreference: { matches: true } });
+  view.render(race, idleControls(), 0.1); assert.equal(view.camera.fov, 64);
+  const timeline = new RaceTimeline(race); timeline.pose.airborne = true;
+  view.render(race, idleControls(), 0.1, timeline.pose); assert.equal(exhaust.group.visible, false);
 });
 
 test('camera remains at a fixed distance from the car as frame times change', () => {
@@ -168,4 +213,66 @@ test('crossing the finish freezes the road camera without snapping its heading',
   assert.ok(Math.abs(timeline.pose.roadHeading - before) < 0.003);
   const frozen = JSON.stringify(timeline.pose); timeline.advance(1, idleControls());
   assert.equal(JSON.stringify(timeline.pose), frozen);
+});
+
+test('indoor cameras remain inside outer walls without rotating away from the road', () => {
+  for (const stage of STAGES.filter(stage => stage.venue)) for (const camera of [0, 1]) {
+    const track = new Track(stage); const race = new Race(track); race.phase = 'racing';
+    const view = cameraHarness(track); const bounds = track.venueBounds!;
+    race.position.z = bounds.maxZ - 3;
+    settings.camera = camera;
+    const timeline = new RaceTimeline(race);
+    view.render(race, idleControls(), 1 / 60, timeline.pose); view.camera.updateMatrixWorld();
+    assert.ok(view.camera.position.x >= bounds.minX + 0.39 && view.camera.position.x <= bounds.maxX - 0.39);
+    assert.ok(view.camera.position.z >= bounds.minZ + 0.39 && view.camera.position.z <= bounds.maxZ - 0.39);
+    const direction = view.camera.getWorldDirection(new THREE.Vector3());
+    const heading = Math.atan2(-direction.x, -direction.z);
+    assert.ok(Math.abs(heading - timeline.pose.roadHeading) < 1e-9);
+  }
+  settings.camera = 0;
+});
+
+test('jump cameras keep the horizon fixed and soften landing at all paint rates', () => {
+  for (const stage of STAGES.filter(stage => stage.jumps)) {
+    const endings: number[][] = [];
+    for (const hz of [30, 60, 144]) {
+      const race = new Race(new Track(stage)); race.phase = 'racing';
+      const crest = stage.jumps![0]; race.placeOnTrack(crest.distance - crest.approach - 8); race.speed = 45;
+      const timeline = new RaceTimeline(race); const view = cameraHarness(race.track);
+      let flight = false; let landed = false; let landingBuffer = 0;
+      for (let i = 0; i < 6 * hz; i++) {
+        const wasAirborne = race.airborne;
+        timeline.advance(1 / hz, { ...idleControls(), throttle: true });
+        flight ||= race.airborne;
+        if (wasAirborne && !race.airborne && !landed) { landed = true; landingBuffer = timeline.pose.cameraHeight - timeline.pose.position.y; }
+        for (const camera of [0, 1]) {
+          settings.camera = camera; view.render(race, idleControls(), 1 / hz, timeline.pose); view.camera.updateMatrixWorld();
+          const direction = view.camera.getWorldDirection(new THREE.Vector3());
+          const expected = camera === 0 ? -2.8 / Math.hypot(29.5, 2.8) : 0;
+          assert.ok(Math.abs(direction.y - expected) < 1e-9, 'ramp pitch and landing must not rotate the horizon');
+          assert.ok(view.camera.position.y >= race.track.surfaceHeight(view.camera.position.x, view.camera.position.z) + 0.79);
+          assert.equal(view.car.group.rotation.x, timeline.pose.pitch);
+        }
+      }
+      assert.ok(flight && landed);
+      assert.ok(landingBuffer > 0.5, 'camera settles down after the car lands instead of inheriting the impact');
+      endings.push([timeline.pose.position.y, timeline.pose.pitch, timeline.pose.cameraHeight]);
+    }
+    for (const values of endings) values.forEach((value, i) => assert.ok(Math.abs(value - endings[0][i]) < 1e-8));
+  }
+  settings.camera = 0;
+});
+
+test('the renderer disconnects tyre marks during flight and reconnects only on contact', () => {
+  const race = new Race(new Track(getStage('meadow'))); race.phase = 'racing';
+  const view = cameraHarness(race.track); const intensities: number[] = [];
+  Object.assign(view, { skidMarks: { update(_left: unknown, _right: unknown, intensity: number) { intensities.push(intensity); } } });
+  race.speed = 30; race.handbrake = true; race.driftAngle = 0.7;
+  const timeline = new RaceTimeline(race);
+  view.render(race, idleControls(), 0, timeline.pose);
+  timeline.pose.airborne = true; timeline.pose.airHeight = 4; timeline.pose.position.y += 4;
+  view.render(race, idleControls(), 0, timeline.pose);
+  timeline.pose.airborne = false; timeline.pose.airHeight = 0; timeline.pose.position.y -= 4;
+  view.render(race, idleControls(), 0, timeline.pose);
+  assert.ok(intensities[0] > 0); assert.equal(intensities[1], 0); assert.ok(intensities[2] > 0);
 });

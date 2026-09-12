@@ -145,7 +145,8 @@ test('five lightweight rival models use interpolated poses and release their res
         * (object instanceof THREE.InstancedMesh ? object.count : 1);
     }
   });
-  assert.equal(models.group.children.length, 5); assert.ok(meshes <= 40); assert.ok(triangles < 4000);
+  // Sculpted bodies and rounded tyres keep the existing draw-call budget.
+  assert.equal(models.group.children.length, 5); assert.ok(meshes <= 40); assert.ok(triangles < 24000);
   models.update(race, timeline.pose.rivals, 0); assert.equal(models.group.visible, false);
   race.phase = 'racing'; timeline.advance(0.025, idleControls()); models.update(race, timeline.pose.rivals, 0.025);
   assert.equal(models.group.visible, true);

@@ -35,15 +35,15 @@ export class SkidMarks {
     this.mesh.geometry.setDrawRange(0, 0);
   }
 
-  update(left: THREE.Vector3, right: THREE.Vector3, intensity: number, time: number) {
+  update(left: THREE.Vector3, right: THREE.Vector3 | null, intensity: number, time: number) {
     if (time === this.lastTime) return;
     this.lastTime = time;
     if (intensity < 0.16) this.connected = false;
     else if (!this.connected) {
-      this.previous[0].copy(left); this.previous[1].copy(right); this.connected = true;
+      this.previous[0].copy(left); this.previous[1].copy(right ?? left); this.connected = true;
     } else {
       this.addSegment(this.previous[0], left, intensity, time);
-      this.addSegment(this.previous[1], right, intensity, time);
+      if (right) this.addSegment(this.previous[1], right, intensity, time);
     }
     for (let i = 0; i < this.count; i++) {
       const fade = Math.max(0, 1 - (time - this.birth[i]) / LIFETIME);

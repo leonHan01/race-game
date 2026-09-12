@@ -1,18 +1,25 @@
 import { clamp, SECTORS, Track, type TrackPoint } from './track';
-import { getVehicle, type VehicleDefinition } from '../content/vehicles';
+import { getVehicle, roadMargin, vehicleClearance, type VehicleDefinition } from '../content/vehicles';
 import { Opponents } from './opponents';
+import { ItemRace } from './items';
+import type { RaceMode } from '../content/items';
+import { longboardAcceleration } from './longboard';
+import { LongboardMotion } from './longboard-motion';
+import { VerticalMotion } from './vertical-motion';
 
 export const MAX_SPEED_KMH = 250;
+export const NITRO_SPEED_BONUS_KMH = 70;
 const NITRO_CAPACITY = 100;
 const NITRO_DRAIN_PER_SECOND = 25;
 const NITRO_CHARGE_PER_SECOND = 45;
-const NITRO_ACCELERATION = 24;
+const NITRO_ACCELERATION = 40;
+const ITEM_BOOST_ACCELERATION = 24;
 
 const angleDifference = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
 export type Phase = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished';
 export type Difficulty = 'club' | 'pro';
-export interface Controls { throttle: boolean; brake: boolean; steering: number; drift: boolean; nitro: boolean }
+export interface Controls { throttle: boolean; brake: boolean; steering: number; drift: boolean; nitro: boolean; standupSlide?: boolean }
 export const idleControls = (): Controls => ({ throttle: false, brake: false, steering: 0, drift: false, nitro: false });
 export interface Split { time: number; total: number; delta: number }
 
@@ -33,6 +40,9 @@ export class Race {
   driftAngle = 0;
   nitro = 0;
   boosting = false;
+  tucking = false;
+  pushing = false;
+  footbraking = false;
   private driftDirection = 0;
   private driftEntrySpeed = 0;
   private releaseGripRate = 4.8;
@@ -45,16 +55,26 @@ export class Race {
   penalty = 0;
   difficulty: Difficulty = 'club';
   autoThrottle = false;
+  mode: RaceMode = 'classic';
   readonly targetTime: number;
   readonly opponents: Opponents;
+  readonly items: ItemRace;
+  readonly vertical = new VerticalMotion();
+  readonly longboard = new LongboardMotion();
 
   constructor(readonly track: Track, readonly vehicle: VehicleDefinition = getVehicle('falcon')) {
-    this.targetTime = track.length / track.definition.goldSpeed; this.opponents = new Opponents(track); this.reset();
+    if (vehicle.mode === 'longboard') this.mode = 'downhill';
+    this.targetTime = track.length / track.definition.goldSpeed; this.opponents = new Opponents(track, vehicle.mode);
+    this.items = new ItemRace(track, this.opponents.cars.map(car => car.id)); this.reset();
   }
   get standings() { return this.opponents.standings(this); }
   get rank() { return this.standings.findIndex(row => row.player) + 1; }
   get stageId() { return this.track.definition.id; }
   get vehicleId() { return this.vehicle.id; }
+  get vehicleMode() { return this.vehicle.mode; }
+  get isLongboard() { return this.vehicle.mode === 'longboard'; }
+  get longboardPose() { return this.longboard.pose; }
+  get descent() { return Math.max(0, this.track.sample(0).y - this.position.y); }
   get gearSpeed() { return this.vehicle.topSpeed / 6; }
   get progress() { return clamp(this.distance / this.track.length, 0, 1); }
   get totalTime() { return this.elapsed + this.penalty; }
@@ -66,9 +86,13 @@ export class Race {
   get wrongWay() { return this.speed > 2 && Math.cos(this.travelHeading - this.track.sample(this.distance).heading) < -0.2; }
   get medal() { return this.totalTime <= this.targetTime ? 'gold' : this.totalTime <= this.targetTime * 1.15 ? 'silver' : 'bronze'; }
   get nextNote() { return this.track.notes.find(note => note.distance > this.distance - 15); }
-  get driftIntensity() { return clamp(Math.abs(this.driftAngle) / 0.65, 0, 1) * clamp(this.speed / 12, 0, 1); }
-  get rearWheelSlip() { return Math.max(this.driftIntensity, this.handbrake ? clamp(this.speed / 30, 0, 0.65) : 0); }
-  get nitroCharging() { return this.phase === 'racing' && this.drifting && this.speed > 6 && this.driftIntensity > 0.08 && this.nitro < NITRO_CAPACITY; }
+  get nextJump() { return this.track.definition.jumps?.find(crest => crest.distance > this.distance - 12); }
+  get airborne() { return this.vertical.airborne; }
+  get airHeight() { return this.vertical.clearance; }
+  get pitch() { return this.vertical.pitch; }
+  get driftIntensity() { return clamp(Math.max(Math.abs(this.driftAngle) / 0.65, this.isLongboard ? this.longboard.pose.switchWeight : 0), 0, 1) * clamp(this.speed / 12, 0, 1); }
+  get rearWheelSlip() { return this.airborne ? 0 : Math.max(this.driftIntensity, this.handbrake ? clamp(this.speed / 30, 0, 0.65) : 0); }
+  get nitroCharging() { return !this.airborne && !this.isLongboard && this.phase === 'racing' && this.drifting && this.speed > 6 && this.driftIntensity > 0.08 && this.nitro < NITRO_CAPACITY; }
 
   /** Explicit placement for the starting grid and player-requested rescue only. */
   placeOnTrack(distance: number, lane = 0, heading = this.track.sample(distance).heading) {
@@ -76,18 +100,21 @@ export class Race {
     this.position = this.track.position(distance, lane);
     this.position.y = this.track.surfaceHeight(this.position.x, this.position.z);
     this.heading = heading; this.travelHeading = heading; this.lateralVelocity = 0;
+    this.vertical.reset(this.position.y, this.track.hasJumps ? Math.atan(this.track.grade(distance) * Math.cos(heading - this.track.sample(distance).heading)) : 0);
   }
 
   reset() {
+    this.longboard.reset();
     this.distance = 0; this.lane = 0; this.speed = 0; this.elapsed = 0;
     this.countdown = 3.6; this.drifting = false; this.driftAngle = 0; this.steerVisual = 0;
     this.handbrake = false; this.handbrakeHeldTime = 0;
-    this.nitro = 0; this.boosting = false;
+    this.nitro = 0; this.boosting = false; this.tucking = false; this.pushing = false; this.footbraking = false;
     this.driftDirection = 0; this.driftEntrySpeed = 0; this.releaseGripRate = 4.8;
     this.lateralVelocity = 0; this.integrity = 100;
     this.splits = []; this.peakSpeed = 0; this.driftTime = 0; this.penalty = 0;
     this.placeOnTrack(0);
     this.opponents.reset();
+    this.items.reset();
   }
   start() { this.reset(); this.phase = 'countdown'; }
   pause() {
@@ -95,21 +122,28 @@ export class Race {
       this.previousPhase = this.phase;
       this.phase = 'paused';
       this.drifting = false;
-      this.boosting = false;
+      this.boosting = false; this.tucking = false; this.pushing = false; this.footbraking = false;
       this.handbrake = false; this.handbrakeHeldTime = 0; this.driftDirection = 0;
     }
   }
   resume() { if (this.phase === 'paused') this.phase = this.previousPhase; }
+  switchLongboardStance() {
+    return this.isLongboard && this.phase === 'racing' && !this.airborne
+      && this.longboard.requestSwitch(this.speed, this.steerVisual);
+  }
+
   recover() {
     if (this.phase !== 'racing') return;
+    this.longboard.reset(true);
     // If a gate was missed, rescue puts the car before that gate, never beyond it.
     this.placeOnTrack(clamp(Math.min(this.distance, this.nextCheckpointDistance - 8), 0, this.track.length));
     this.speed = Math.min(this.speed, 8);
-    this.boosting = false;
+    this.boosting = false; this.tucking = false; this.pushing = false; this.footbraking = false;
     this.drifting = false; this.driftAngle = 0; this.steerVisual = 0;
     this.handbrake = false; this.handbrakeHeldTime = 0;
     this.driftDirection = 0; this.driftEntrySpeed = 0; this.releaseGripRate = 4.8;
     this.penalty += 5;
+    if (this.mode === 'items') this.items.recover();
   }
 
   /** Fixed-step arcade rally handling. All state is independent of WebGL. */
@@ -122,6 +156,9 @@ export class Race {
     }
     if (this.phase !== 'racing') return;
     const startTime = this.elapsed;
+    this.items.beginStep(dt, this);
+    const itemState = !this.isLongboard && this.mode === 'items' ? this.items.player : null;
+    if (itemState && itemState.stun > 0) controls = { ...controls, throttle: false, brake: true, drift: false, nitro: false };
     this.elapsed += dt;
     // Keyboard and touch inputs share a progressive steering rack. Centre it
     // promptly on release, and pass through neutral when the player countersteers.
@@ -129,32 +166,53 @@ export class Race {
     const steeringResponse = requestedSteering === 0 ? 14 : requestedSteering * this.steerVisual < 0 ? 11 : 8;
     this.steerVisual += (requestedSteering - this.steerVisual) * (1 - Math.exp(-dt * steeringResponse));
     if (requestedSteering === 0 && Math.abs(this.steerVisual) < 0.001) this.steerVisual = 0;
-    this.handbrake = controls.drift;
+    if (this.isLongboard) this.longboard.update(dt, {
+      speed: this.speed, steering: controls.steering,
+      slide: controls.drift || Boolean(controls.standupSlide), standup: Boolean(controls.standupSlide) && !controls.drift,
+      brake: controls.brake, tuck: controls.nitro,
+      push: (controls.throttle || this.autoThrottle) && !controls.nitro && this.speed < 9,
+    });
+    this.handbrake = controls.drift || (this.isLongboard && (Boolean(controls.standupSlide) || this.longboard.switching));
     this.handbrakeHeldTime = this.handbrake ? this.handbrakeHeldTime + dt : 0;
     if (!this.handbrake) this.driftDirection = 0;
-    else if (this.driftDirection === 0 && this.speed > 4) {
+    else if (!this.isLongboard && this.driftDirection === 0 && this.speed > 4) {
       // Initiate a slide from steering or existing momentum, then retain its direction
       // while the handbrake remains held, even when the steering keys are released.
       this.driftDirection = Math.abs(controls.steering) > 0.1 ? Math.sign(controls.steering)
         : Math.abs(this.driftAngle) > 0.04 ? -Math.sign(this.driftAngle) : 0;
       if (this.driftDirection !== 0) this.driftEntrySpeed = this.speed;
     }
-    const maximumSpeed = Math.min(MAX_SPEED_KMH, this.vehicle.topSpeed) / 3.6 * (0.75 + this.integrity * 0.0025);
+    const condition = 0.75 + this.integrity * 0.0025;
+    const maximumSpeed = Math.min(MAX_SPEED_KMH, this.vehicle.topSpeed) / 3.6 * condition;
     // Use only the boost time the tank can fund, including a partial final tick.
-    const boostTime = controls.nitro && !controls.brake && !this.handbrake ? Math.min(dt, this.nitro / NITRO_DRAIN_PER_SECOND) : 0;
-    this.boosting = boostTime > 0;
+    const boostTime = !this.airborne && !this.isLongboard && controls.nitro && !controls.brake && !this.handbrake ? Math.min(dt, this.nitro / NITRO_DRAIN_PER_SECOND) : 0;
+    const itemBoost = !this.airborne && itemState && itemState.boost > 0 && !controls.brake && !this.handbrake ? dt : 0;
+    this.boosting = boostTime > 0 || itemBoost > 0;
     this.nitro = clamp(this.nitro - boostTime * NITRO_DRAIN_PER_SECOND, 0, NITRO_CAPACITY);
+    // Nitro temporarily raises the engine limit. After release, shed excess speed
+    // progressively; an airborne car keeps its existing drag-only momentum.
+    const speedLimit = boostTime > 0 ? maximumSpeed + NITRO_SPEED_BONUS_KMH / 3.6 * condition
+      : this.isLongboard ? maximumSpeed : Math.max(maximumSpeed, this.speed - (this.airborne ? 0 : 12 * dt));
     const throttle = controls.throttle || this.autoThrottle || this.boosting;
     // A held handbrake always brakes, including against W or automatic throttle.
-    const acceleration = controls.brake ? -this.vehicle.braking * Math.sqrt(this.track.definition.grip) : this.handbrake ? -18 : throttle ? this.vehicle.acceleration * (1 - this.speed / (this.vehicle.topSpeed / 3.6 * 1.0656)) : -5;
-    this.speed = clamp(this.speed + acceleration * dt + NITRO_ACCELERATION * boostTime, 0, maximumSpeed);
-    this.drifting = this.handbrake && this.driftDirection !== 0 && this.speed > 0.5;
+    this.footbraking = this.isLongboard && controls.brake;
+    this.tucking = this.isLongboard && controls.nitro && !controls.brake && !this.handbrake;
+    this.pushing = this.isLongboard && throttle && !this.tucking && !controls.brake && !this.handbrake && this.speed < 9;
+    const grade = this.isLongboard ? this.track.grade(this.distance) * Math.cos(this.travelHeading - this.track.sample(this.distance).heading) : 0;
+    const acceleration = this.isLongboard
+      ? longboardAcceleration(this.speed, grade, this.pushing, this.tucking, controls.brake, this.handbrake, this.longboard.brakingStrength, this.vehicle)
+      : controls.brake ? -this.vehicle.braking * Math.sqrt(this.track.definition.grip) : this.handbrake ? (this.vehicleMode === 'motorcycle' ? -15 : -18) : throttle ? this.vehicle.acceleration * (1 - this.speed / (this.vehicle.topSpeed / 3.6 * 1.0656)) : -5;
+    // Tyre inputs resume on contact; airborne momentum only loses a little to drag.
+    this.speed = clamp(this.speed + (this.airborne ? -this.speed * 0.035 : acceleration) * dt
+      + Math.max(NITRO_ACCELERATION * boostTime, ITEM_BOOST_ACCELERATION * itemBoost), 0, speedLimit);
+    this.drifting = !this.airborne && this.handbrake && (this.isLongboard ? this.longboard.style !== 'none' || this.longboard.switching : this.driftDirection !== 0) && this.speed > 0.5;
     if (this.drifting) this.driftTime += dt;
 
-    if (this.handbrake) {
+    if (this.isLongboard) this.driftAngle = this.longboard.angle;
+    else if (this.handbrake) {
       if (this.drifting) {
         const duration = clamp(this.handbrakeHeldTime / 1.5, 0, 1);
-        const entryMomentum = clamp(this.driftEntrySpeed / 36, 0, 1);
+        const entryMomentum = clamp(this.driftEntrySpeed / (this.isLongboard ? 18 : 36), 0, 1);
         const countersteering = Math.max(0, -controls.steering * this.driftDirection);
         const amplitude = (0.22 + duration * 0.82) * entryMomentum * (1 - countersteering * 0.4) * this.vehicle.drift;
         const targetAngle = -this.driftDirection * amplitude;
@@ -162,7 +220,7 @@ export class Race {
         this.releaseGripRate = 4.8 - duration * 2;
       }
       // Once stopped, locked wheels retain their orientation; there is no parked spin.
-    } else {
+    } else if (!this.airborne) {
       const gripRate = this.speed < 4 ? 9 : this.releaseGripRate;
       this.driftAngle *= Math.exp(-dt * gripRate);
       if (Math.abs(this.driftAngle) < 0.001) this.driftAngle = 0;
@@ -173,30 +231,39 @@ export class Race {
 
     // Player steering changes a world-space heading. Road curvature never feeds steering.
     const turnRate = Math.min(this.speed / 8, 1) * 0.95 * this.vehicle.steering / (1 + this.speed * 0.026);
-    this.heading = angleDifference(this.heading - this.steerVisual * turnRate * (this.handbrake ? 1.08 : 1) * dt, 0);
+    if (!this.airborne) this.heading = angleDifference(this.heading - this.steerVisual * turnRate * (this.isLongboard && this.longboard.switching ? 0.55 : this.handbrake ? 1.08 : 1) * dt, 0);
     const grip = (this.handbrake ? 1.6 : (this.difficulty === 'pro' ? 4 : 6.5) - this.driftIntensity * 1.8) * this.vehicle.grip * this.track.definition.grip;
-    if (this.speed > 0) this.travelHeading += angleDifference(this.heading, this.travelHeading) * (1 - Math.exp(-dt * grip));
+    if (!this.airborne && this.speed > 0) this.travelHeading += angleDifference(this.heading, this.travelHeading) * (1 - Math.exp(-dt * grip));
     const vx = -Math.sin(this.travelHeading) * this.speed;
     const vz = -Math.cos(this.travelHeading) * this.speed;
     const before = { ...this.position };
+    const previousDistance = this.distance;
     const previousLane = this.lane;
     this.position.x += vx * dt; this.position.z += vz * dt;
-    const clearance = Math.hypot(1.25 * this.vehicle.scale[0], 2.35 * this.vehicle.scale[2]);
-    if (this.track.confine(this.position, clearance)) this.speed *= Math.exp(-dt * 18);
+    if (this.track.confine(this.position, vehicleClearance(this.vehicle))) this.speed *= Math.exp(-dt * 18);
     const road = this.track.project(this.position.x, this.position.z);
     this.distance = road.distance; this.lane = road.lane;
-    this.position.y = this.track.surfaceHeight(this.position.x, this.position.z, road);
+    const groundHeight = this.track.surfaceHeight(this.position.x, this.position.z, road);
+    if (this.track.hasJumps) {
+      const previousFrame = this.track.sample(previousDistance);
+      this.vertical.update(dt, { height: groundHeight, speed: this.speed,
+        launchVelocity: this.track.grade(previousDistance, 1.3) * (vx * previousFrame.tx + vz * previousFrame.tz),
+        groundVelocity: this.track.grade(this.distance, 1.3) * (vx * road.tx + vz * road.tz),
+        pitch: Math.atan(this.track.grade(this.distance, 1.3) * Math.cos(this.heading + this.driftAngle - road.heading)) });
+      this.position.y = this.vertical.height;
+      if (this.airborne) { this.drifting = false; this.boosting = false; }
+    } else this.position.y = groundHeight;
     this.lateralVelocity = vx * road.rx + vz * road.rz;
 
     const speedRatio = Math.min(1, this.speed / 18);
-    const shoulder = this.track.roadWidth / 2 - 0.95;
-    if (Math.abs(this.lane) > shoulder) {
+    const shoulder = this.track.roadWidth / 2 - roadMargin(this.vehicle);
+    if (!this.airborne && Math.abs(this.lane) > shoulder) {
       // Rough ground slows the car but never snaps it back to the road or rotates it.
       // Multiplicative drag leaves enough low-speed traction to steer back manually.
       this.speed *= Math.exp(-dt * (Math.abs(this.lane) > this.track.shoulderEdge ? 1.1 : 0.45) * this.vehicle.offroadDrag);
       this.integrity = Math.max(0, this.integrity - dt * 0.8 * speedRatio / this.vehicle.durability);
     }
-    if (Math.abs(this.lane) > this.track.roadWidth / 2 + 1.4 && Math.abs(previousLane) <= this.track.roadWidth / 2 + 1.4) {
+    if (!this.airborne && Math.abs(this.lane) > this.track.roadWidth / 2 + 1.4 && Math.abs(previousLane) <= this.track.roadWidth / 2 + 1.4) {
       this.speed *= 0.8;
       this.integrity = Math.max(0, this.integrity - 1.5 * speedRatio / this.vehicle.durability);
     }
@@ -205,6 +272,7 @@ export class Race {
     this.recordSplits(before, dt);
     // Stop the shared race clock at the player's interpolated finish crossing.
     this.opponents.update(this.elapsed - startTime, this, startTime);
+    this.items.endStep(this.elapsed - startTime, this);
   }
 
   private recordSplits(before: TrackPoint, dt: number) {
@@ -225,13 +293,15 @@ export class Race {
       const last = this.splits[this.splits.length - 1]?.total ?? 0;
       this.splits.push({ time: crossing - last, total: crossing, delta: crossing - this.targetTime * (this.splits.length + 1) / SECTORS });
       if (this.splits.length === SECTORS) {
-        this.position.x = x; this.position.z = z; this.position.y = gate.y;
+        this.position.x = x; this.position.z = z;
+        this.position.y = this.airborne ? before.y + (this.position.y - before.y) * fraction : gate.y;
+        this.vertical.height = this.position.y;
         this.distance = this.track.length; this.lane = lane;
       }
     }
     if (this.splits.length === SECTORS) {
       this.phase = 'finished'; this.drifting = false;
-      this.boosting = false;
+      this.boosting = false; this.tucking = false; this.pushing = false; this.footbraking = false;
       this.handbrake = false; this.handbrakeHeldTime = 0; this.driftDirection = 0;
       this.elapsed = this.splits[SECTORS - 1].total - this.penalty;
     }

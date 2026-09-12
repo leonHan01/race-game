@@ -14,7 +14,7 @@ test('all maps have continuous roads, useful pace notes and smoothly joined shou
   const lengths = new Set<number>();
   for (const stage of STAGES) {
     const track = new Track(stage); lengths.add(track.length);
-    assert.ok(track.length > 1500 && track.length < 6500);
+    assert.ok(track.length > (stage.venue ? 600 : 1500) && track.length < 6500);
     assert.ok(track.notes.length >= 2);
     for (let d = 30; d < track.length - 30; d += 37) {
       const p = track.position(d); const projection = track.project(p.x, p.z);
@@ -36,7 +36,7 @@ test('all maps have continuous roads, useful pace notes and smoothly joined shou
 test('every map and vehicle combination keeps manual steering, handbraking and rescue', () => {
   for (const stage of STAGES) for (const vehicle of VEHICLES) {
     const race = new Race(new Track(stage), vehicle);
-    race.phase = 'racing'; race.placeOnTrack(-1000); race.speed = 35;
+    race.phase = 'racing'; race.placeOnTrack(stage.venue ? 0 : -1000); race.speed = 35;
     const heading = race.heading;
     const timeline = new RaceTimeline(race);
     for (let i = 0; i < 45; i++) timeline.advance(1 / 90, throttle);
