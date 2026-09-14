@@ -16,7 +16,7 @@ test('three distinct indoor stages retain fully flat floors as the outdoor catal
   assert.equal(new Set(venues.map(stage => stage.venue!.kind)).size, 3);
   for (const stage of venues) {
     const track = new Track(stage); const bounds = track.venueBounds!;
-    assert.ok(track.length > 800 && track.length < 1600);
+    assert.ok(track.length > 1600 && track.length < 3200);
     assert.equal(stage.theme.density, 0);
     for (let d = -24; d < track.length + 32; d += 11) for (const lane of [-track.shoulderEdge - 10, 0, track.shoulderEdge + 10]) {
       const p = track.position(d, lane);
@@ -61,7 +61,7 @@ test('outer walls prevent escape at speed without changing player heading or add
     if (direction === 'west') { race.position.x = bounds.minX + radius + 0.1; race.heading = Math.PI / 2; }
     if (direction === 'east') { race.position.x = bounds.maxX - radius - 0.1; race.heading = -Math.PI / 2; }
     race.travelHeading = race.heading; const heading = race.heading; race.speed = 60;
-    for (let tick = 0; tick < 30; tick++) {
+    for (let tick = 0; tick < 60; tick++) {
       race.update(1 / 60, idleControls());
       assert.ok(race.position.x >= bounds.minX + radius - 1e-8 && race.position.x <= bounds.maxX - radius + 1e-8);
       assert.ok(race.position.z >= bounds.minZ + radius - 1e-8 && race.position.z <= bounds.maxZ - radius + 1e-8);
@@ -93,24 +93,35 @@ test('indoor buildings keep a bounded draw budget and dispose shared resources o
   }
 });
 
-test('the production world builder uses indoor scenery and still installs start, finish and split signs', () => {
+test('the production world builder installs one shared indoor start/finish and all split signs', () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const labels: string[] = [];
   // Race signs only need a 2D canvas; this stub never creates a browser or GPU context.
   Object.defineProperty(globalThis, 'document', { configurable: true, value: {
-    createElement() { return { width: 0, height: 0, getContext() { return { fillRect() {}, fillText() {} }; } }; },
+    createElement() { return { width: 0, height: 0, getContext() { return { fillRect() {}, fillText(text: string) { labels.push(text); } }; } }; },
   } });
   try {
     for (const stage of venues) {
-      const scene = new THREE.Group(); const scenery = buildWorld(scene, new Track(stage));
+      labels.length = 0;
+      const track = new Track(stage); const scene = new THREE.Group(); const scenery = buildWorld(scene, track);
       assert.equal(scenery.treeCount, 0); assert.equal(scenery.crowns, undefined); assert.equal(scenery.rocks, undefined);
       assert.ok(scene.getObjectByName(`venue-${stage.id}`));
+      const start = track.position(0);
+      for (const name of ['start-finish-arch', 'start-finish-line']) {
+        const marker = scene.getObjectByName(name)!;
+        assert.ok(marker, `${stage.id}: missing ${name}`);
+        assert.equal(marker.position.x, start.x); assert.equal(marker.position.z, start.z);
+      }
+      assert.equal(labels.filter(text => text === 'START / FINISH').length, 1);
+      assert.equal(labels.includes('FINISH'), false);
+      assert.equal(labels.filter(text => text === 'SPLIT').length, 8);
       let signs = 0;
       scene.traverse(object => {
         if (object instanceof THREE.Mesh) for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
           if ('map' in material && material.map instanceof THREE.CanvasTexture) signs++;
         }
       });
-      assert.ok(signs >= 10, 'start, finish and the eight split boards remain present');
+      assert.equal(signs, 17, 'one shared banner, eight split boards and eight flags');
       disposeObject(scene);
     }
   } finally {

@@ -35,7 +35,7 @@ test('downhill tuning quintuples drive while reducing both brake styles by one f
 
 test('downhill is continuous, entirely descending, and has a 260 m drop with physical gates', () => {
   const track = new Track(DOWNHILL_STAGE);
-  assert.ok(track.length > 2400 && track.length < 3000);
+  assert.ok(track.length > 4800 && track.length < 6000);
   assert.equal(track.points[0].y - track.points.at(-1)!.y, 260);
   for (let i = 1; i < track.points.length; i++) assert.ok(track.points[i].y < track.points[i - 1].y);
   for (let distance = 0; distance < track.length; distance += 20) {
@@ -83,7 +83,7 @@ test('downhill keeps manual heading and offroad penalties, including recovery an
   const race = riding(); race.placeOnTrack(400, 8); race.speed = 20;
   const heading = race.heading;
   race.update(step, { ...idleControls(), nitro: true });
-  assert.equal(race.heading, heading); assert.ok(race.integrity < 100); assert.ok(race.speed < 20);
+  assert.ok(Math.abs(race.heading - heading) < 1e-12); assert.ok(race.integrity < 100); assert.ok(race.speed < 20);
   const timeline = new RaceTimeline(race); const time = race.elapsed;
   race.pause(); timeline.advance(0.1, { ...idleControls(), throttle: true });
   assert.equal(race.elapsed, time); assert.equal(race.tucking, false);
@@ -122,7 +122,7 @@ test('mode switch updates track, rider, opponents and timeline and restores the 
   const view = { contextAvailable: true, track, vehicle: race.vehicle, setStage(next: Track) { this.track = next; }, setVehicle(next: typeof LONGBOARD) { this.vehicle = next; }, reset() {} };
   const ui = { race, setSelection(next: Race) { this.race = next; } };
   const context = vm.createContext({ Track, Race, RaceTimeline, raceSelection, track, race, timeline: new RaceTimeline(race), view, ui,
-    settings: { stageId: 'depot', vehicleId: 'trail', mode: 'classic', difficulty: 'club', autoThrottle: false },
+    settings: { stageId: 'depot', vehicleId: 'trail', mode: 'classic', difficulty: 'medium', autoThrottle: false },
     input: { clear() {} }, audio: { reset() {} }, saveSettings() {}, performance: { now: () => 1 }, lastFrame: 0, dirty: false });
   vm.runInContext(ts.transpile(callback, { target: ts.ScriptTarget.ES2022 }), context);
   context.setRaceMode('downhill');

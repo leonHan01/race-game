@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { parseDifficulty } from '../src/content/difficulties.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -24,11 +25,11 @@ test('all downhill courses descend continuously and every board can cross their 
     const track = new Track(stage);
     assert.equal(getStage(stage.id), stage);
     assert.ok(stage.downhill && !stage.venue && !track.hasJumps);
-    assert.ok(stageDrop(stage) >= 150 && track.length > 1900 && track.length < 4500);
+    assert.ok(stageDrop(stage) >= 150 && track.length > 3800 && track.length < 18000);
     assert.ok(track.notes.length >= 1, stage.id);
     for (let i = 1; i < track.points.length; i++) assert.ok(track.points[i].y < track.points[i - 1].y, stage.id);
     for (let d = 0; d < track.length; d += 31) {
-      assert.ok(track.grade(d) < -.04 && track.grade(d) > -.25, `${stage.id}: unreasonable slope`);
+      assert.ok(track.grade(d) < -.02 && track.grade(d) > -.125, `${stage.id}: unreasonable slope`);
       const p = track.position(d);
       assert.ok(Math.abs(track.project(p.x, p.z).distance - d) < .01, `${stage.id}: overlapping road`);
     }
@@ -48,11 +49,28 @@ test('mixed board opponents can finish every descent under their own speed limit
   for (const stage of DOWNHILL_STAGES) {
     const race = new Race(new Track(stage), LONGBOARD); race.lane = 30;
     assert.ok(new Set(race.opponents.cars.map(car => car.vehicle.id)).size > 1);
-    for (let tick = 0; tick < 450 * 30 && race.opponents.cars.some(car => car.finishTime === null); tick++) {
+    const timeLimit = Math.max(450, race.targetTime * 1.5);
+    for (let tick = 0; tick < timeLimit * 30 && race.opponents.cars.some(car => car.finishTime === null); tick++) {
       race.opponents.update(1 / 30, race, tick / 30);
       assert.ok(race.opponents.cars.every(car => car.speed * 3.6 <= car.vehicle.topSpeed + 1e-8));
     }
     assert.ok(race.opponents.cars.every(car => car.finishTime !== null), stage.id);
+  }
+});
+
+test('every board can reach 270 km/h on a descent and cannot exceed it', () => {
+  const track = new Track({ ...DOWNHILL_STAGE, points: [
+    { x: 0, z: 0, y: 500 }, { x: 0, z: -1500, y: 275 }, { x: 0, z: -3000, y: 50 },
+  ] });
+  for (const vehicle of LONGBOARDS) {
+    const race = new Race(track, vehicle); race.phase = 'racing'; race.placeOnTrack(50);
+    race.speed = 269 / 3.6;
+    for (let tick = 0; tick < 120; tick++) {
+      race.update(1 / 60, { ...idleControls(), nitro: true });
+      assert.ok(race.speed * 3.6 <= 270 + 1e-8, vehicle.id);
+    }
+    assert.equal(race.speed * 3.6, 270, vehicle.id);
+    assert.equal(race.boosting, false, 'tucking cannot bypass the downhill limit');
   }
 });
 
@@ -118,7 +136,7 @@ test('settings reload both selections and records remain isolated by map and boa
   const localStorage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) };
   values.set('dustline-settings', JSON.stringify({ mode: 'downhill', stageId: 'depot', vehicleId: 'trail', downhillStageId: 'maple-descent', downhillVehicleId: 'needle' }));
   const source = readFileSync(new URL('../src/settings.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
-  const context = vm.createContext({ exports: {}, localStorage, getStage, getVehicle, DOWNHILL_STAGE, LONGBOARD });
+  const context = vm.createContext({ exports: {}, localStorage, getStage, getVehicle, DOWNHILL_STAGE, LONGBOARD, parseDifficulty });
   vm.runInContext(ts.transpile(source, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }), context);
   assert.equal(context.exports.settings.downhillStageId, 'maple-descent'); assert.equal(context.exports.settings.downhillVehicleId, 'needle');
   assert.equal(context.exports.settings.stageId, 'depot'); assert.equal(context.exports.settings.vehicleId, 'trail');
@@ -139,9 +157,9 @@ test('downhill menus list selectable models and routes, then disable selection d
   const stages = longboardCatalog('stage', race, formatTime); const garage = longboardCatalog('garage', race, formatTime);
   for (const stage of DOWNHILL_STAGES) assert.ok(stages.includes(`data-stage="${stage.id}"`));
   for (const vehicle of LONGBOARDS) assert.ok(garage.includes(`data-vehicle="${vehicle.id}"`));
-  assert.match(stages, /落差 480 M/); assert.match(stages, /海拔剖面/); assert.match(garage, /上限 120 KM\/H/);
+  assert.match(stages, /落差 480 M/); assert.match(stages, /海拔剖面/); assert.match(garage, /上限 270 KM\/H/);
   assert.doesNotMatch(stages + garage, / disabled/);
-  assert.match(longboardDialog('controls', race, formatTime)!, /速度上限 120 km\/h/);
+  assert.match(longboardDialog('controls', race, formatTime)!, /速度上限 270 km\/h/);
   race.start(); race.pause();
   for (const [type, count] of [['stage', DOWNHILL_STAGES.length], ['garage', LONGBOARDS.length]] as const) {
     const content = longboardCatalog(type, race, formatTime);

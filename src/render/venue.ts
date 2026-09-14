@@ -46,7 +46,8 @@ export function buildIndoorVenue(scene: THREE.Object3D, track: Track) {
       Math.hypot(x2 - x1, y2 - y1) + 0.3, 0.7, length + 2, 0, Math.atan2(y2 - y1, x2 - x1));
   }
 
-  const rows = Math.ceil(length / 34); const columns = Math.ceil(width / 36);
+  // Spread fixtures across larger halls while keeping decoration geometry bounded.
+  const rows = Math.min(24, Math.ceil(length / 34)); const columns = Math.min(16, Math.ceil(width / 36));
   for (let row = 0; row <= rows; row++) {
     const z = minZ + length * row / rows;
     for (const x of [minX + 1.2, maxX - 1.2]) {
@@ -67,14 +68,18 @@ export function buildIndoorVenue(scene: THREE.Object3D, track: Track) {
   }
 
   const asphalt = material(track.definition.theme.road);
-  const route = ribbon(track, -track.roadWidth / 2, track.roadWidth / 2, 0.04, asphalt, 2, -24, track.length + 32);
+  const start = track.closed ? 0 : -24; const end = track.length + (track.closed ? 0 : 32);
+  const route = ribbon(track, -track.roadWidth / 2, track.roadWidth / 2, 0.04, asphalt, 2, start, end);
   route.name = 'indoor-road'; root.add(route);
   const paint = new THREE.MeshBasicMaterial({ color: venue.accent, side: THREE.DoubleSide });
   for (const side of [-1, 1]) {
     const edge = side * (track.roadWidth / 2 - 0.35);
-    root.add(ribbon(track, edge - 0.12, edge + 0.12, 0.055, paint, 2, -24, track.length + 32));
-    for (let d = 28; d < track.length - 15; d += 4) {
-      const p = track.position(d, side * (track.roadWidth / 2 + 0.9)); const frame = track.sample(d);
+    root.add(ribbon(track, edge - 0.12, edge + 0.12, 0.055, paint, 2, start, end));
+    const barrierStart = track.closed ? 0 : 28; const barrierEnd = track.length - (track.closed ? 0 : 15);
+    const barrierCount = Math.ceil((barrierEnd - barrierStart) / 4);
+    for (let i = 0; i < barrierCount; i++) {
+      const d = barrierStart + i * (barrierEnd - barrierStart) / barrierCount;
+      const p = track.position(d, side * (track.boundaryEdge + 0.4)); const frame = track.sample(d);
       const colored = Math.floor(d / 12) % 2;
       box(colored ? 'course-barriers-accent' : 'course-barriers-light', colored ? accent : concrete, p.x, floor + 0.45, p.z, 0.8, 0.9, 3.6, frame.heading);
     }
@@ -90,11 +95,13 @@ export function buildIndoorVenue(scene: THREE.Object3D, track: Track) {
   for (const x of [minX + 0.1, maxX - 0.1]) box('wall-bands', accent, x, floor + 2.7, centerZ, 0.15, 0.45, length);
 
   if (venue.kind === 'dome') {
+    const seatCount = Math.min(128, Math.ceil((length - 36) / 4));
     for (const side of [-1, 1]) for (let step = 0; step < 5; step++) {
       const x = side < 0 ? minX + 2 + step * 3.4 : maxX - 2 - step * 3.4;
       const h = (5 - step) * 0.85;
       box('grandstands', concrete, x, floor + h / 2, centerZ, 3.5, h, length - 30);
-      for (let z = minZ + 18; z < maxZ - 18; z += 4) {
+      for (let seat = 0; seat < seatCount; seat++) {
+        const z = minZ + 18 + seat * (length - 36) / seatCount;
         box('grandstand-seats', accent, x, floor + h + 0.3, z, 1.2, 0.6, 1.6);
       }
     }

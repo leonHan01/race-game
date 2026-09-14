@@ -1,4 +1,5 @@
 import type { Difficulty } from './simulation/race';
+import { parseDifficulty } from './content/difficulties';
 import { getStage, DOWNHILL_STAGE, type StageId } from './content/stages';
 import { getVehicle, LONGBOARD, type VehicleId } from './content/vehicles';
 import type { RaceMode } from './content/items';
@@ -9,14 +10,14 @@ export const LIVERIES = [
   { name: '竞赛红', color: '#ae4133', accent: '#efebe0' },
 ];
 export interface Settings { quality: 'low' | 'standard'; sound: boolean; voice: boolean; autoThrottle: boolean; difficulty: Difficulty; livery: number; camera: number; stageId: StageId; vehicleId: VehicleId; downhillStageId: StageId; downhillVehicleId: VehicleId; mode: RaceMode }
-export const settings: Settings = { quality: 'standard', sound: true, voice: true, autoThrottle: false, difficulty: 'club', livery: 0, camera: 0, stageId: 'pine', vehicleId: 'falcon', downhillStageId: DOWNHILL_STAGE.id, downhillVehicleId: LONGBOARD.id, mode: 'classic' };
+export const settings: Settings = { quality: 'standard', sound: true, voice: true, autoThrottle: false, difficulty: 'medium', livery: 0, camera: 0, stageId: 'pine', vehicleId: 'falcon', downhillStageId: DOWNHILL_STAGE.id, downhillVehicleId: LONGBOARD.id, mode: 'classic' };
 try {
   const saved: unknown = JSON.parse(localStorage.getItem('dustline-settings') ?? 'null');
   if (saved && typeof saved === 'object') {
     const s = saved as Partial<Settings>;
     if (s.quality === 'low' || s.quality === 'standard') settings.quality = s.quality;
     for (const key of ['sound', 'voice', 'autoThrottle'] as const) if (typeof s[key] === 'boolean') settings[key] = s[key];
-    if (s.difficulty === 'club' || s.difficulty === 'pro') settings.difficulty = s.difficulty;
+    settings.difficulty = parseDifficulty(s.difficulty);
     if (s.mode === 'classic' || s.mode === 'items' || s.mode === 'downhill') settings.mode = s.mode;
     if (Number.isInteger(s.livery) && s.livery! >= 0 && s.livery! < LIVERIES.length) settings.livery = s.livery!;
     if (s.camera === 0 || s.camera === 1) settings.camera = s.camera;
@@ -29,14 +30,16 @@ try {
   }
 } catch { /* Storage is optional, including private browsing. */ }
 export function saveSettings() { try { localStorage.setItem('dustline-settings', JSON.stringify(settings)); } catch { /* Keep session settings. */ } }
-type RecordCategory = Pick<Settings, 'difficulty' | 'autoThrottle'> & Partial<Pick<Settings, 'stageId' | 'vehicleId' | 'mode'>>;
-const recordKey = (category: RecordCategory) => `dustline-best-v3-${category.stageId ?? 'pine'}-${category.vehicleId ?? 'falcon'}-${category.difficulty}-${category.autoThrottle ? 'auto' : 'manual'}${category.mode && category.mode !== 'classic' ? `-${category.mode}` : ''}`;
+export type RecordCategory = Pick<Settings, 'difficulty' | 'autoThrottle'> & Partial<Pick<Settings, 'stageId' | 'vehicleId' | 'mode'>>;
+export const recordKey = (category: RecordCategory, difficulty: string = category.difficulty) => `dustline-best-v3-${category.stageId ?? 'pine'}-${category.vehicleId ?? 'falcon'}-${difficulty}-${category.autoThrottle ? 'auto' : 'manual'}${category.mode && category.mode !== 'classic' ? `-${category.mode}` : ''}`;
 export function bestTime(category: RecordCategory = settings): number | null {
   try {
     const current = localStorage.getItem(recordKey(category));
-    const legacy = (!category.mode || category.mode === 'classic') && (category.stageId ?? 'pine') === 'pine' && (category.vehicleId ?? 'falcon') === 'falcon'
-      ? localStorage.getItem(`dustline-best-v2-${category.difficulty}-${category.autoThrottle ? 'auto' : 'manual'}`) : null;
-    const n = Number(current ?? legacy);
+    const oldDifficulty = category.difficulty === 'medium' ? 'club' : category.difficulty === 'hard' ? 'pro' : null;
+    const previous = oldDifficulty ? localStorage.getItem(recordKey(category, oldDifficulty)) : null;
+    const legacy = oldDifficulty && (!category.mode || category.mode === 'classic') && (category.stageId ?? 'pine') === 'pine' && (category.vehicleId ?? 'falcon') === 'falcon'
+      ? localStorage.getItem(`dustline-best-v2-${oldDifficulty}-${category.autoThrottle ? 'auto' : 'manual'}`) : null;
+    const n = Number(current ?? previous ?? legacy);
     return Number.isFinite(n) && n > 0 ? n : null;
   } catch { return null; }
 }

@@ -1,11 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { STAGES } from '../src/content/stages.ts';
+import { STAGES, DOWNHILL_STAGES } from '../src/content/stages.ts';
 import { Track } from '../src/simulation/track.ts';
 import { buildWorld } from '../src/render/world.ts';
 import { disposeObject } from '../src/render/dispose.ts';
 import { placeGroundShadow } from '../src/render/ground-shadow.ts';
+
+test('terrain covers every extended outdoor route and runout within the existing mesh budget', () => {
+  const original = globalThis.document;
+  const context = new Proxy({}, { get: () => () => {} });
+  globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => context }) } as unknown as Document;
+  try {
+    for (const stage of [...STAGES.filter(stage => !stage.venue), ...DOWNHILL_STAGES]) {
+      const track = new Track(stage); const scene = new THREE.Group(); buildWorld(scene, track);
+      const terrain = scene.getObjectByName('rally-terrain') as THREE.Mesh;
+      terrain.geometry.computeBoundingBox(); const bounds = terrain.geometry.boundingBox!;
+      assert.ok(terrain.geometry.index!.count <= 140 * 282 * 6, `${stage.id}: terrain budget grew`);
+      for (let distance = -130; distance <= track.length + 100; distance += 31) for (const lane of [-200, 0, 200]) {
+        const p = track.position(distance, lane);
+        assert.ok(p.x >= bounds.min.x && p.x <= bounds.max.x && p.z >= bounds.min.z && p.z <= bounds.max.z,
+          `${stage.id}: ground ends before the course scenery at ${distance}`);
+      }
+      disposeObject(scene);
+    }
+  } finally { globalThis.document = original; }
+});
 
 test('rendered ramps match collision height, remain above terrain and have warning signs', () => {
   // Only CPU geometry and ray intersections: no browser, WebGL or running game.

@@ -15,7 +15,7 @@ function runFrames(hz: number, quality = 'standard') {
   let now = 1000;
   const paints: { time: number; z: number }[] = [];
   const context = vm.createContext({
-    race, input: { read: () => ({ ...idleControls(), throttle: true }), clear() {} },
+    race, input: { advance() {}, read: () => ({ ...idleControls(), throttle: true }), clear() {} },
     settings: { quality }, document: { hidden: false },
     requestAnimationFrame() { return 1; }, animationFrame: 0, lastFrame: now, lastPaint: now,
     timeline: new RaceTimeline(race), paintClock: new PaintClock(), dirty: false,
@@ -45,4 +45,29 @@ test('rendered position advances continuously instead of alternating physical ti
     const variation = Math.max(...speeds) - Math.min(...speeds);
     assert.ok(variation < 0.01, `${hz} Hz / ${quality}: motion varies by ${variation.toFixed(3)} m/s`);
   }
+});
+
+test('result screen waits three seconds after the finish transition', () => {
+  const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  const callback = main.slice(main.indexOf('function frame(now:'), main.indexOf('// Let the lightweight'));
+  const race = new Race(new Track()); race.phase = 'racing';
+  let now = 1000; let resultCalls = 0; let recordCalls = 0; let scheduledDelay = 0; let reveal: (() => void) | undefined;
+  const context = vm.createContext({
+    race, input: { advance() {}, read: () => idleControls(), clear() {} },
+    settings: { quality: 'standard' }, document: { hidden: false },
+    window: { setTimeout(callback: () => void, delay: number) { reveal = callback; scheduledDelay = delay; return 1; } },
+    requestAnimationFrame() { return 1; }, animationFrame: 0, lastFrame: now, lastPaint: now,
+    timeline: { pose: {}, advance() { race.phase = 'finished'; } }, paintClock: new PaintClock(), dirty: false,
+    ui: { update() {}, toast() {} }, audio: { update() {}, silence() {} },
+    ghostRecords: { save(saved: Race) { assert.equal(saved, race); recordCalls++; return true; } },
+    recordResult(newRecord: boolean) { assert.equal(newRecord, true); resultCalls++; },
+    view: { render() {} }, generation: 0,
+  });
+  vm.runInContext(ts.transpile(callback, { target: ts.ScriptTarget.ES2022 }), context);
+  context.frame(1016);
+  assert.equal(recordCalls, 1, 'the PB and trajectory are saved at the finish, before the dialog delay');
+  assert.equal(resultCalls, 0);
+  assert.equal(scheduledDelay, 3000);
+  reveal!();
+  assert.equal(resultCalls, 1);
 });

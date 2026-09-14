@@ -40,9 +40,16 @@ test('menu selections update the real race, timeline, renderer and HUD together;
   assert.equal(context.race.stageId, 'depot'); assert.ok(context.race.track.venueBounds);
   assert.equal(context.race.opponents.cars.length, 5); assert.equal(ui.track, view.track);
   assert.equal(context.settings.stageId, 'depot');
+  for (const id of ['thunder', 'vortex', 'summit']) {
+    context.ui.onSelect('vehicle', id);
+    assert.equal(context.race.vehicleId, id); assert.equal(context.settings.vehicleId, id);
+    assert.equal(view.vehicle, getVehicle(id)); assert.equal(ui.race, context.race);
+    assert.equal(context.race.stageId, 'depot');
+    assert.deepEqual(context.timeline.pose.position, context.race.position);
+  }
   const active = context.race; active.start();
   context.ui.onSelect('stage', 'valley'); active.pause(); context.ui.onSelect('vehicle', 'swift');
-  assert.equal(context.race, active); assert.equal(saved, 3); assert.equal(resets, 3);
+  assert.equal(context.race, active); assert.equal(saved, 6); assert.equal(resets, 6);
 });
 
 test('replaced scenes release instance buffers and shared geometry, materials and textures exactly once', () => {

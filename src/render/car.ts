@@ -2,7 +2,7 @@ import { LongboardRider } from './longboard';
 import * as THREE from 'three';
 import { LIVERIES } from '../settings';
 import { getVehicle, type VehicleDefinition } from '../content/vehicles';
-import { buildVehicleBody, buildWheelGeometry, createVehicleMaterials, WHEEL_RADIUS, CAR_EXHAUST_PORTS } from './vehicle-model';
+import { buildVehicleBody, buildWheelGeometry, buildDoorDecalGeometry, createVehicleMaterials, WHEEL_RADIUS, CAR_EXHAUST_PORTS } from './vehicle-model';
 import { Motorcycle } from './motorcycle';
 import { ExhaustFlames } from './exhaust-flames';
 
@@ -25,7 +25,7 @@ export class RallyCar {
     g.add(buildVehicleBody(vehicle, this.materials));
     g.add(this.exhaust.group);
     // Four wheels share geometry and materials, but keep independent spin and steering.
-    const geometry = buildWheelGeometry();
+    const geometry = buildWheelGeometry('player', vehicle.body);
     for (const z of [-1.3, 1.29]) for (const side of [-1, 1]) {
       const axle = new THREE.Group(); axle.position.set(side * 1.035, WHEEL_RADIUS, z);
       const wheel = new THREE.Group(); axle.add(wheel);
@@ -43,8 +43,7 @@ export class RallyCar {
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     const decal = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.45, polygonOffset: true, polygonOffsetFactor: -1 });
     for (const side of [-1, 1]) {
-      const number = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.27), decal);
-      number.position.set(side * 1.026, 0.87, -0.05); number.rotation.y = side * Math.PI / 2; g.add(number);
+      g.add(new THREE.Mesh(buildDoorDecalGeometry(vehicle, side), decal));
     }
     const plateCanvas = document.createElement('canvas'); plateCanvas.width = 256; plateCanvas.height = 64;
     const pc = plateCanvas.getContext('2d')!;

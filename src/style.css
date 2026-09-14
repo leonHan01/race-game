@@ -92,6 +92,9 @@ h1 > span:first-child { color: var(--gold); }
 #race-time { font-family: var(--condensed); font-weight: 500; font-size: 48px; letter-spacing: 2px; font-variant-numeric: tabular-nums; margin-top: 6px; }
 .stage-clock p { color: #d2d8c7; font-size: 9px; margin: 3px 0; }
 .stage-clock p strong { font: 500 12px var(--condensed); margin-left: 12px; }
+.stage-clock .ghost-status { margin-top: 7px; color: #bcc7bd; }
+.stage-clock .ghost-status.has-ghost { color: #89e9f2; }
+.ghost-status.has-ghost::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border: 1px solid currentColor; border-radius: 50%; background: #89e9f230; }
 .stage-progress { position: absolute; width: 240px; top: 41px; left: 50%; transform: translateX(-50%); }
 .stage-progress > div:first-child { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 1.5px; }
 .stage-progress strong { color: var(--gold); font-weight: 600; }
@@ -396,14 +399,11 @@ dialog .vehicle-mode-picker { margin-top: 20px; }
 body[data-race-mode='downhill'] .nitro-track { display: none; }
 body[data-race-mode='downhill'] .nitro-button { border-color: #89babb; }
 .mode-picker { flex-wrap: wrap; }
-.mode-picker button[data-action='mode-downhill'][aria-pressed='true'] { border-color: #9ed9d0; color: #c4f2e5; background: #27413e; }
 @media (max-width: 600px) {
   .mode-picker { gap: 5px; }
   .mode-picker button { padding: 8px 9px; min-width: 0; }
   .mode-picker button small { font-size: 7px; }
 }
-
-body[data-race-mode='downhill'] #menu .vehicle-mode-picker { display: none; }
 
 .longboard-actions { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #a8d8d244; }
 body[data-race-mode='downhill'] .longboard-actions { display: block; }

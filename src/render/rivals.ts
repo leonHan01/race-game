@@ -1,16 +1,18 @@
 import { LongboardRider } from './longboard';
 import * as THREE from 'three';
-import { buildVehicleBody, buildWheelGeometry, createVehicleMaterials, WHEEL_RADIUS } from './vehicle-model';
+import { buildVehicleBody, buildWheelGeometry, createVehicleMaterials, WHEEL_RADIUS, CAR_EXHAUST_PORTS } from './vehicle-model';
 import type { VehicleMode } from '../content/vehicles';
 import { rivalDrivers, type RivalPose } from '../simulation/opponents';
 import type { Race } from '../simulation/race';
-import { Motorcycle } from './motorcycle';
+import { Motorcycle, motorcycleExhaustPort } from './motorcycle';
 import { placeGroundShadow } from './ground-shadow';
+import { ExhaustFlames } from './exhaust-flames';
 
 /** Rivals share the sculpted silhouette, with fewer subdivisions and two wheel batches. */
 export class RivalCars {
   readonly group = new THREE.Group();
   private readonly models;
+  private readonly exhausts = new Map<number, ExhaustFlames>();
   constructor(mode: VehicleMode = 'car') {
     this.models = rivalDrivers(mode).map(driver => {
       const vehicle = driver.vehicle;
@@ -26,7 +28,7 @@ export class RivalCars {
       const car = new THREE.Group(); car.scale.set(...vehicle.scale); this.group.add(car);
       const materials = createVehicleMaterials(driver.color, driver.color, 'rival');
       car.add(buildVehicleBody(vehicle, materials, 'rival'));
-      const wheelGeometry = buildWheelGeometry('rival');
+      const wheelGeometry = buildWheelGeometry('rival', vehicle.body);
       const tyres = new THREE.InstancedMesh(wheelGeometry.tyre, materials.rubber, 4);
       const hubs = new THREE.InstancedMesh(wheelGeometry.rim, materials.alloy, 4);
       tyres.instanceMatrix.setUsage(THREE.DynamicDrawUsage); hubs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -41,7 +43,7 @@ export class RivalCars {
     this.models.forEach((model, i) => {
       const pose = poses[i]; if (!pose) return;
       model.car.visible = Math.hypot(pose.position.x - race.position.x, pose.position.z - race.position.z) < 230;
-      model.car.position.set(pose.position.x, pose.position.y + 0.065, pose.position.z); model.car.rotation.y = pose.heading;
+      model.car.position.set(pose.position.x, pose.position.y + 0.065, pose.position.z); model.car.rotation.y = pose.heading + pose.driftAngle;
       model.car.rotation.order = 'YXZ'; model.car.rotation.x = pose.pitch;
       const groundPitch = race.track.hasJumps ? Math.atan(race.track.grade(race.opponents.cars[i].distance, 1.3)) : 0;
       if (race.track.hasJumps) {
@@ -50,7 +52,7 @@ export class RivalCars {
         model.car.position.y += Math.abs(Math.sin(groundPitch) - Math.sin(pose.pitch)) * reach * Math.max(0, 1 - pose.airHeight / 0.25);
       }
       model.car.updateWorldMatrix(true, false);
-      placeGroundShadow(model.car, pose.position, pose.airHeight, pose.heading, groundPitch);
+      placeGroundShadow(model.car, pose.position, pose.airHeight, pose.heading + pose.driftAngle, groundPitch);
       if (model.board) {
         const rival = race.opponents.cars[i];
         const sliding = rival.braking && pose.speed > 13 && Math.abs(pose.steering) > 0.25;
@@ -60,10 +62,20 @@ export class RivalCars {
         model.board.update(pose.speed, pose.steering, slideAngle, rival.braking && !sliding, sliding, dt, pose.speed > 9 && !rival.braking, pose.speed < 9 && !rival.braking);
         return;
       }
+      // Create jets only for visible opponents that actually boost; no idle effect cost.
+      let exhaust = this.exhausts.get(i);
+      if (!exhaust && pose.boosting && model.car.visible && race.phase === 'racing' && !pose.airborne) {
+        const vehicle = race.opponents.cars[i].vehicle;
+        exhaust = new ExhaustFlames(model.bike ? [motorcycleExhaustPort(vehicle)] : CAR_EXHAUST_PORTS);
+        (model.bike?.suspension ?? model.car).add(exhaust.group);
+        this.exhausts.set(i, exhaust);
+      }
+      if (race.phase === 'menu' || race.phase === 'countdown' || race.phase === 'finished' || pose.airborne || !model.car.visible || race.opponents.cars[i].finishTime !== null) exhaust?.reset();
+      else if (race.phase === 'racing') exhaust?.update(pose.boosting, pose.speed, dt);
       const stun = race.mode === 'items' ? race.items.state(race.opponents.cars[i].id).stun : 0;
       if (stun > 0) model.car.rotation.y += Math.sin(stun / 1.15 * Math.PI) * 0.6;
       if (model.bike) {
-        model.bike.update(pose.speed, pose.steering, 0, race.opponents.cars[i].braking, false, dt);
+        model.bike.update(pose.speed, pose.steering, pose.driftAngle, race.opponents.cars[i].braking, pose.drifting, dt);
         return;
       }
       model.brake.emissiveIntensity = race.opponents.cars[i].braking ? 2.8 : 0.3;

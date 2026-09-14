@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Race, idleControls } from '../src/simulation/race.ts';
-import { Track, ROAD_WIDTH, SECTORS } from '../src/simulation/track.ts';
+import { Track, SECTORS } from '../src/simulation/track.ts';
+import { vehicleClearance } from '../src/content/vehicles.ts';
 
 const track = new Track();
 const STEP = 1 / 60;
@@ -24,22 +25,25 @@ test('projecting a position onto the road preserves signed offsets and stage dis
   }
 });
 
-test('without steering a car drives a world-space straight line through a bend in both difficulty modes', () => {
+test('without steering a car keeps a straight heading until the bend boundary blocks its path', () => {
   const bend = [...track.notes].sort((a, b) => Math.abs(track.curvature(b.distance)) - Math.abs(track.curvature(a.distance)))[0];
-  for (const difficulty of ['club', 'pro'] as const) {
+  for (const difficulty of ['easy', 'medium', 'hard'] as const) {
     for (const autoThrottle of [false, true]) {
       const race = new Race(track); race.phase = 'racing'; race.speed = 32;
       race.difficulty = difficulty; race.autoThrottle = autoThrottle;
       race.placeOnTrack(bend.distance - 30);
       const start = { ...race.position }; const heading = race.heading;
       const rightX = Math.cos(heading); const rightZ = -Math.sin(heading);
+      let contacted = false;
       for (let i = 0; i < 120; i++) {
         race.update(STEP, { ...idleControls(), throttle: !autoThrottle });
         assert.ok(Math.abs(angleDifference(race.heading, heading)) < 1e-10);
         const sideways = (race.position.x - start.x) * rightX + (race.position.z - start.z) * rightZ;
-        assert.ok(Math.abs(sideways) < 1e-8, `road must not bend the path: ${sideways}`);
+        contacted ||= race.integrity < 100;
+        if (!contacted) assert.ok(Math.abs(sideways) < 1e-8, `road must not bend the path before contact: ${sideways}`);
+        assert.ok(Math.abs(race.lane) + vehicleClearance(race.vehicle) <= track.boundaryEdge + 1e-7);
       }
-      assert.ok(Math.abs(race.lane) > ROAD_WIDTH / 2, 'continuing straight through a sharp bend should leave the road');
+      assert.ok(contacted, 'continuing straight through a sharp bend should hit the barrier');
     }
   }
 });
@@ -83,12 +87,12 @@ test('steering builds progressively and reversing the key does not snap the yaw 
   assert.ok(angleDifference(race.heading, reversed) > 0);
 });
 
-test('leaving the gravel slows the car without snapping it to the roadside or changing its heading', () => {
+test('an outside placement returns inside the barrier with damage but without changing its heading', () => {
   const race = new Race(track); race.phase = 'racing'; race.speed = 35;
   race.placeOnTrack(450, 18);
   const heading = race.heading;
   race.update(STEP, throttle);
-  assert.ok(Math.abs(race.lane) > 17);
+  assert.ok(Math.abs(race.lane) + vehicleClearance(race.vehicle) <= track.boundaryEdge + 1e-7);
   assert.ok(race.speed < 35); assert.ok(race.integrity < 100);
   assert.ok(Math.abs(angleDifference(race.heading, heading)) < 1e-10);
   race.recover();

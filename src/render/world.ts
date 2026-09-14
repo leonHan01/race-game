@@ -5,6 +5,7 @@ import { terrainNoise as noise, terrainOffset as terrainHeight, shoulderBlend } 
 import { startingGrid } from '../simulation/opponents';
 import { ribbon } from './road';
 import { buildIndoorVenue } from './venue';
+import { buildTrackBarriers } from './track-barriers';
 
 export interface WorldScenery { crowns?: THREE.InstancedMesh; trunks?: THREE.InstancedMesh; rocks?: THREE.InstancedMesh; treeCount: number }
 
@@ -45,7 +46,8 @@ export function buildWorld(scene: THREE.Object3D, track: Track): WorldScenery {
   const theme = track.definition.theme;
   const edge = track.shoulderEdge;
   const width = track.roadWidth;
-  const surface = new THREE.MeshStandardMaterial({ map: gravelTexture(track.definition.id === 'alpine', Boolean(track.definition.downhill)), color: theme.road, roughness: 1, side: THREE.DoubleSide });
+  const asphalt = track.definition.surfaceCode === 'ASPHALT';
+  const surface = new THREE.MeshStandardMaterial({ map: gravelTexture(track.definition.surfaceCode === 'SNOW', asphalt), color: theme.road, roughness: 1, side: THREE.DoubleSide });
   const shoulderMaterial = new THREE.MeshStandardMaterial({ map: surface.map, color: theme.shoulder, roughness: 1, side: THREE.DoubleSide });
   scene.add(ribbon(track, -edge, edge, -0.07, shoulderMaterial));
   // Match the smooth physical shoulder transition; merge the strips into one draw.
@@ -58,10 +60,11 @@ export function buildWorld(scene: THREE.Object3D, track: Track): WorldScenery {
   apronParts.forEach(geometry => geometry.dispose());
   scene.add(new THREE.Mesh(apronGeometry, shoulderMaterial));
   const road = ribbon(track, -width / 2, width / 2, 0.04, surface); road.name = 'rally-road'; scene.add(road);
+  buildTrackBarriers(scene, track);
   const rutMaterial = new THREE.MeshBasicMaterial({ color: '#504634', transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide });
-  for (const lane of (track.definition.downhill ? [] : [-2.1, -0.8, 1, 2.4])) scene.add(ribbon(track, lane - 0.25, lane + 0.25, 0.055, rutMaterial));
+  for (const lane of (asphalt ? [] : [-2.1, -0.8, 1, 2.4])) scene.add(ribbon(track, lane - 0.25, lane + 0.25, 0.055, rutMaterial));
 
-  if (track.definition.downhill) {
+  if (asphalt) {
     const white = new THREE.MeshBasicMaterial({ color: '#e2e1cb', side: THREE.DoubleSide });
     const yellow = new THREE.MeshBasicMaterial({ color: '#e4b85f', side: THREE.DoubleSide });
     for (const side of [-1, 1]) {
@@ -86,11 +89,19 @@ export function buildWorld(scene: THREE.Object3D, track: Track): WorldScenery {
     if (track.hasJumps) elevation = track.sample(roadDistance).y;
     return { height: elevation + terrainHeight(x, z, distance), distance };
   };
-  const columns = 140; const rows = 282; const cell = 12;
+  // Cover the full route and its scenery without increasing the terrain vertex budget.
+  const minX = Math.min(...guide.map(point => point.x)) - 260;
+  const maxX = Math.max(...guide.map(point => point.x)) + 260;
+  const minZ = Math.min(...guide.map(point => point.z)) - 260;
+  const maxZ = Math.max(...guide.map(point => point.z)) + 260;
+  const terrainWidth = maxX - minX; const terrainDepth = maxZ - minZ;
+  const cell = Math.max(12, Math.sqrt(terrainWidth * terrainDepth / (140 * 282)));
+  const columns = Math.max(1, Math.floor(terrainWidth / cell));
+  const rows = Math.max(1, Math.floor(terrainDepth / cell));
   const color = new THREE.Color();
   for (let i = 0; i <= rows; i++) {
     for (let j = 0; j <= columns; j++) {
-      const x = -840 + j * cell; const z = 420 - i * cell;
+      const x = minX + j / columns * terrainWidth; const z = maxZ - i / rows * terrainDepth;
       const ground = groundAt(x, z);
       positions.push(x, ground.height, z);
       if (ground.distance < 11) color.set(theme.shoulder);
@@ -107,10 +118,10 @@ export function buildWorld(scene: THREE.Object3D, track: Track): WorldScenery {
   const groundMesh = new THREE.Mesh(terrain, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
   groundMesh.name = 'rally-terrain'; scene.add(groundMesh);
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000), new THREE.MeshBasicMaterial({ color: theme.ground }));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, -28, -1400); scene.add(floor);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(16000, terrainWidth + 4000), Math.max(16000, terrainDepth + 4000)), new THREE.MeshBasicMaterial({ color: theme.ground }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set((minX + maxX) / 2, -28, (minZ + maxZ) / 2); scene.add(floor);
 
-  const crownParts = ['valley', 'meadow'].includes(track.definition.id) ? [
+  const crownParts = track.definition.scenery?.trees === 'broadleaf' ? [
     new THREE.IcosahedronGeometry(2.8, 0).translate(0, 6, 0),
     new THREE.IcosahedronGeometry(2.1, 0).translate(0.5, 8.1, 0),
   ] : [
@@ -153,11 +164,11 @@ export function buildWorld(scene: THREE.Object3D, track: Track): WorldScenery {
   for (let i = 0; i < 36; i++) {
     const radius = 180 + random() * 250;
     const height = 220 + random() * 350;
-    const geometry = ['canyon', 'quarry'].includes(track.definition.id)
+    const geometry = track.definition.scenery?.mountains === 'mesa'
       ? new THREE.CylinderGeometry(radius * 0.45, radius, height, 6)
       : new THREE.ConeGeometry(radius, height, 7);
     const mountain = new THREE.Mesh(geometry, mountainMaterial);
-    mountain.position.set((i % 2 ? -1 : 1) * (570 + random() * 480), 20, -3100 + random() * 3800);
+    mountain.position.set(i % 2 ? minX - radius - random() * 480 : maxX + radius + random() * 480, 20, minZ + random() * terrainDepth);
     mountain.rotation.y = random() * 6.28; scene.add(mountain);
   }
 
@@ -210,9 +221,13 @@ function buildCourseFurniture(scene: THREE.Object3D, track: Track) {
     }
     const banner = new THREE.Mesh(new THREE.BoxGeometry(width + 2.1, 1.45, 0.23), new THREE.MeshStandardMaterial({ map: signTexture(text, subtext), roughness: 1 }));
     banner.position.y = 4.9; group.add(banner); scene.add(group);
+    return group;
   }
-  arch(18, 'DUSTLINE', `${track.definition.english}  /  START`);
-  arch(track.length - 4, 'FINISH', track.definition.downhill ? 'LONGBOARD DOWNHILL CLUB' : 'DUSTLINE RALLY CLUB');
+  if (track.closed) arch(0, 'START / FINISH', track.definition.english).name = 'start-finish-arch';
+  else {
+    arch(18, 'DUSTLINE', `${track.definition.english}  /  START`);
+    arch(track.length - 4, 'FINISH', track.definition.downhill ? 'LONGBOARD DOWNHILL CLUB' : 'DUSTLINE RALLY CLUB');
+  }
   const gridMaterial = new THREE.LineBasicMaterial({ color: '#e7dcb4', transparent: true, opacity: 0.75 });
   const gridPlane = new THREE.PlaneGeometry(2.9, 5.4);
   const gridGeometry = new THREE.EdgesGeometry(gridPlane); gridPlane.dispose();
@@ -223,8 +238,9 @@ function buildCourseFurniture(scene: THREE.Object3D, track: Track) {
   }
 
   const stripeMaterial = new THREE.MeshBasicMaterial({ color: '#e8dfc7', side: THREE.DoubleSide });
-  for (const d of [18, track.length - 4]) {
+  for (const d of (track.closed ? [0] : [18, track.length - 4])) {
     const p = track.sample(d); const stripe = new THREE.Mesh(new THREE.PlaneGeometry(width, 0.4), stripeMaterial);
+    if (track.closed) stripe.name = 'start-finish-line';
     stripe.rotation.set(-Math.PI / 2, 0, -p.heading); stripe.position.set(p.x, p.y + 0.07, p.z); scene.add(stripe);
   }
 

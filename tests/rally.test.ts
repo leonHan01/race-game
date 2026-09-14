@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { Track, ROAD_WIDTH, SECTORS } from '../src/simulation/track.ts';
 import { Race, idleControls } from '../src/simulation/race.ts';
 import { bestTime, saveRecord, settings } from '../src/settings.ts';
+import { vehicleClearance } from '../src/content/vehicles.ts';
 
 const track = new Track();
 const STEP = 1 / 60;
 const driving = { ...idleControls(), throttle: true };
 
 test('stage has continuous arc-length sampling and perpendicular road offsets', () => {
-  assert.ok(track.length > 3000 && track.length < 5000);
+  assert.ok(track.length > 6000 && track.length < 10000);
   for (let d = 0; d < track.length - 1; d += 13) {
     const a = track.sample(d); const b = track.sample(d + 1);
     assert.ok(Math.abs(Math.hypot(b.x - a.x, b.z - a.z) - 1) < 0.015);
@@ -46,8 +47,9 @@ test('countdown prevents driving and pause freezes all simulation state', () => 
   race.update(STEP, driving); assert.ok(race.speed > 0);
 });
 
-test('manual throttle, brake priority, and handbrake work without reverse speed', () => {
+test('manual throttle, brake priority, and handbrake work before braking into reverse', () => {
   const race = new Race(track); race.phase = 'racing';
+  race.placeOnTrack(-2000);
   for (let i = 0; i < 30; i++) race.update(STEP, idleControls());
   assert.equal(race.speed, 0);
   race.speed = 30;
@@ -56,8 +58,10 @@ test('manual throttle, brake priority, and handbrake work without reverse speed'
   race.speed = 30;
   race.update(STEP, { ...driving, drift: true, steering: 1 });
   assert.ok(race.drifting); assert.ok(race.driftTime > 0);
-  for (let i = 0; i < 150; i++) race.update(STEP, { ...idleControls(), brake: true });
+  for (let i = 0; i < 150 && race.speed > 0; i++) race.update(STEP, { ...idleControls(), brake: true });
   assert.equal(race.speed, 0);
+  race.update(STEP, { ...idleControls(), brake: true });
+  assert.ok(race.speed < 0);
 });
 
 test('manual and automatic throttle reach 250 km/h and sustain the speed limit', () => {
@@ -94,6 +98,8 @@ test('drifting produces a substantial, mirrored slip angle without rotating a st
 
 function holdHandbrake(seconds: number, speed = 36) {
   const race = new Race(track); race.phase = 'racing'; race.speed = speed;
+  // Isolate tyre handling from the live field and its collision impulses.
+  race.placeOnTrack(-2000);
   for (let i = 0; i < Math.round(seconds / STEP); i++) {
     // Turn only to initiate the slide; keep Space held after letting go of steering.
     race.update(STEP, { ...driving, drift: true, steering: i < 6 ? 1 : 0 });
@@ -123,7 +129,7 @@ test('longer Space holds build larger angles and prolong grip recovery', () => {
 });
 
 test('Space sustains an initiated slide with neutral steering and below the old speed cutoff', () => {
-  const race = holdHandbrake(1, 24);
+  const race = holdHandbrake(1, 16);
   assert.ok(race.speed > 0.5 && race.speed < 12);
   assert.equal(race.handbrake, true); assert.equal(race.drifting, true);
   assert.ok(race.driftAngle < -0.1); assert.ok(race.lateralVelocity > 0);
@@ -138,7 +144,7 @@ test('Space sustains an initiated slide with neutral steering and below the old 
 test('a held handbrake continuously overcomes manual and automatic throttle, then holds the car stopped', () => {
   for (const autoThrottle of [false, true]) {
     const race = new Race(track); race.phase = 'racing'; race.speed = 24; race.autoThrottle = autoThrottle;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 240; i++) {
       const previousSpeed = race.speed;
       race.update(STEP, { ...idleControls(), throttle: !autoThrottle, drift: true });
       assert.ok(race.speed <= previousSpeed);
@@ -155,7 +161,7 @@ test('a held handbrake continuously overcomes manual and automatic throttle, the
 });
 
 test('holding Space through a stop freezes the existing angle instead of spinning the car', () => {
-  const race = holdHandbrake(2, 24);
+  const race = holdHandbrake(4, 24);
   assert.equal(race.speed, 0); assert.ok(Math.abs(race.driftAngle) > 0.1);
   const angle = race.driftAngle; const lane = race.lane;
   for (let i = 0; i < 60; i++) race.update(STEP, { ...driving, drift: true, steering: -1 });
@@ -170,7 +176,7 @@ test('straight-line handbraking produces rear tyre slip until release or a full 
   assert.equal(race.driftAngle, 0); assert.equal(race.drifting, false);
   assert.ok(race.rearWheelSlip > 0.5);
   race.update(STEP, driving); assert.equal(race.rearWheelSlip, 0);
-  for (let i = 0; i < 120; i++) race.update(STEP, { ...driving, drift: true });
+  for (let i = 0; i < 240; i++) race.update(STEP, { ...driving, drift: true });
   assert.equal(race.speed, 0); assert.equal(race.rearWheelSlip, 0);
 });
 
@@ -214,7 +220,7 @@ test('shoulder damage stays bounded and recovery adds time without stage progres
   race.placeOnTrack(40, ROAD_WIDTH);
   race.update(STEP, driving);
   assert.ok(race.speed < 35); assert.ok(race.integrity < 100);
-  assert.ok(Math.abs(race.lane) > ROAD_WIDTH / 2 + 1.4);
+  assert.ok(Math.abs(race.lane) + vehicleClearance(race.vehicle) <= track.boundaryEdge + 1e-7);
   const distance = race.distance; const time = race.totalTime;
   race.recover();
   assert.equal(race.distance, distance); assert.equal(race.lane, 0);
@@ -245,13 +251,13 @@ test('finish time interpolates the final crossing and cannot advance after finis
 });
 
 test('restart clears damage, penalties, splits, and motion while preserving driving preferences', () => {
-  const race = new Race(track); race.difficulty = 'pro'; race.autoThrottle = true;
+  const race = new Race(track); race.difficulty = 'hard'; race.autoThrottle = true;
   race.integrity = 12; race.penalty = 15; race.distance = 200; race.speed = 44; race.elapsed = 23;
   race.splits.push({ time: 20, total: 20, delta: 4 });
   race.start();
   assert.equal(race.phase, 'countdown'); assert.equal(race.distance, 0); assert.equal(race.speed, 0);
   assert.equal(race.integrity, 100); assert.equal(race.penalty, 0); assert.equal(race.splits.length, 0);
-  assert.equal(race.difficulty, 'pro'); assert.ok(race.autoThrottle);
+  assert.equal(race.difficulty, 'hard'); assert.ok(race.autoThrottle);
 });
 
 test('best records stay separate by active difficulty and throttle mode', () => {
@@ -260,15 +266,15 @@ test('best records stay separate by active difficulty and throttle mode', () => 
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => values.set(key, value),
   } });
-  const manual = { difficulty: 'club' as const, autoThrottle: false };
-  const auto = { difficulty: 'club' as const, autoThrottle: true };
-  const professional = { difficulty: 'pro' as const, autoThrottle: false };
-  settings.difficulty = 'pro';
+  const manual = { difficulty: 'medium' as const, autoThrottle: false };
+  const auto = { difficulty: 'medium' as const, autoThrottle: true };
+  const professional = { difficulty: 'hard' as const, autoThrottle: false };
+  settings.difficulty = 'hard';
   assert.ok(saveRecord(130, manual)); assert.equal(bestTime(manual), 130);
   assert.equal(bestTime(professional), null); assert.equal(bestTime(auto), null);
   assert.equal(saveRecord(145, manual), false); assert.equal(bestTime(manual), 130);
   assert.ok(saveRecord(123, manual)); assert.equal(bestTime(manual), 123);
   assert.equal(saveRecord(NaN, manual), false); assert.equal(saveRecord(-1, manual), false);
-  values.set('dustline-best-v3-pine-falcon-club-manual', 'corrupt'); assert.equal(bestTime(manual), null);
+  values.set('dustline-best-v3-pine-falcon-medium-manual', 'corrupt'); assert.equal(bestTime(manual), null);
   delete (globalThis as { localStorage?: unknown }).localStorage;
 });

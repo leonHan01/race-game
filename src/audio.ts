@@ -53,7 +53,7 @@ export class RallyAudio {
     const rpm = race.vehicleMode === 'motorcycle' ? 68 + race.engineRevs * 128 : 42 + race.engineRevs * 81.6;
     this.engine!.frequency.setTargetAtTime(rpm, c.currentTime, 0.08);
     this.overtone!.frequency.setTargetAtTime(rpm * 2.01, c.currentTime, 0.08);
-    this.gravelGain!.gain.setTargetAtTime(race.airborne ? 0 : Math.min(0.8, race.speed / (race.isLongboard ? 45 : 95) + race.rearWheelSlip * 0.38), c.currentTime, 0.1);
+    this.gravelGain!.gain.setTargetAtTime(race.airborne ? 0 : Math.min(0.8, Math.abs(race.speed) / (race.isLongboard ? 45 : 95) + race.rearWheelSlip * 0.38), c.currentTime, 0.1);
     if (race.phase === 'countdown') {
       const count = Math.ceil(race.countdown);
       if (count !== this.lastCountdown && count <= 3) { this.beep(440, 0.1); this.lastCountdown = count; }

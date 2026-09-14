@@ -4,11 +4,12 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-W, H, SCALE = 440, 490, 215
+W, H, SCALE = 440, 490, 195 if '--turn-transition' in sys.argv else 215
 FONT = '/System/Library/Fonts/Supplemental/Arial.ttf'
 BOLD = '/System/Library/Fonts/Supplemental/Arial Bold.ttf'
 views = json.load(open(sys.argv[1]))
-canvas = Image.new('RGB', (W * 4, H * 2 + 116), '#101a21')
+columns = 2 if '--turns' in sys.argv or '--balance' in sys.argv else 4
+canvas = Image.new('RGB', (W * columns, H * ((len(views) + columns - 1) // columns) + 116), '#101a21')
 draw = ImageDraw.Draw(canvas)
 draw.text((28, 20), 'RIDGELINE / DOWNHILL', font=ImageFont.truetype(BOLD, 29), fill='#f0e8da')
 draw.text((29, 60), 'RIDER STUDY     /     ACTUAL MODEL GEOMETRY     /     OFFLINE CPU RENDER', font=ImageFont.truetype(FONT, 13), fill='#8da1ab')
@@ -16,7 +17,7 @@ draw.text((29, 60), 'RIDER STUDY     /     ACTUAL MODEL GEOMETRY     /     OFFLI
 def unit(v):
     return v / np.linalg.norm(v)
 
-forward = unit(np.array([3., 1.9, 3.7 if '--rear' in sys.argv else -3.7]))
+forward = unit(np.array([4.8, 1.6, -1.4]) if '--balance' in sys.argv or '--push' in sys.argv else np.array([.9, 2.6, 4.6]) if '--turns' in sys.argv else np.array([3., 1.9, 3.7 if '--rear' in sys.argv else -3.7]))
 right = unit(np.cross([0, 1, 0], forward))
 up = unit(np.cross(forward, right))
 basis = np.array([right, up, forward]).T
@@ -75,9 +76,21 @@ for i, view in enumerate(views):
         depth[ymin:ymax+1, xmin:xmax+1][visible] = z[visible]
     tile = Image.fromarray(np.uint8(np.clip(img, 0, 1)*255))
     td = ImageDraw.Draw(tile)
+    if '--balance' in sys.argv:
+        support = project(np.array(view['supportFoot']))
+        pelvis = np.array(view['pelvis'])
+        on_deck = pelvis.copy()
+        on_deck[1] = .16
+        start, end = project(pelvis), project(on_deck)
+        for dash in range(0, 12, 2):
+            a = start + (end - start) * dash / 12
+            b = start + (end - start) * (dash + 1) / 12
+            td.line((a[0], a[1], b[0], b[1]), fill='#e9b775', width=2)
+        td.ellipse((support[0]-15, support[1]-8, support[0]+15, support[1]+8), outline='#ffd08b', width=2)
+        td.ellipse((start[0]-4, start[1]-4, start[0]+4, start[1]+4), fill='#e9b775')
     td.line((20, 22, 52, 22), fill='#e59851', width=3)
     td.text((20, H-57), view['name'], font=ImageFont.truetype(BOLD, 18), fill='#f0e8da')
     td.text((20, H-31), view['detail'], font=ImageFont.truetype(FONT, 12), fill='#acbbc3')
-    canvas.paste(tile, ((i % 4)*W, 98 + (i // 4)*H))
+    canvas.paste(tile, ((i % columns)*W, 98 + (i // columns)*H))
 canvas.save(sys.argv[2])
 print(sys.argv[2])

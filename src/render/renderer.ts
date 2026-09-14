@@ -17,6 +17,7 @@ import { ItemVisuals } from './items';
 import { placeGroundShadow } from './ground-shadow';
 import { BIKE_AXLES } from './motorcycle';
 import { SprintView } from './sprint-view';
+import { GhostVehicle } from './ghost';
 
 const DUST_COUNT = 160;
 interface Dust { x: number; y: number; z: number; vx: number; vz: number; life: number; maxLife: number; size: number; spread: number }
@@ -28,6 +29,7 @@ export class RallyRenderer {
   car = createPlayerVehicle(raceSelection(settings.mode, settings.stageId, settings.vehicleId).vehicle);
   private rivals = new RivalCars(raceSelection(settings.mode, settings.stageId, settings.vehicleId).vehicle.mode);
   private itemVisuals?: ItemVisuals;
+  private ghost?: GhostVehicle;
   private sceneryRoot = new THREE.Group();
   private dust: Dust[] = [];
   private dustCursor = 0;
@@ -112,6 +114,7 @@ export class RallyRenderer {
   }
   setStage(track: Track) {
     this.track = track;
+    this.clearGhost();
     if (this.itemVisuals) {
       this.scene.remove(this.itemVisuals.group); disposeObject(this.itemVisuals.group); this.itemVisuals = undefined;
     }
@@ -121,6 +124,7 @@ export class RallyRenderer {
   }
   setVehicle(vehicle: VehicleDefinition) {
     if (this.car.vehicle.id === vehicle.id) return;
+    this.clearGhost();
     if (this.car.vehicle.mode !== vehicle.mode) {
       this.scene.remove(this.rivals.group); disposeObject(this.rivals.group);
       this.rivals = new RivalCars(vehicle.mode); this.scene.add(this.rivals.group);
@@ -141,10 +145,16 @@ export class RallyRenderer {
   resize() { this.camera.aspect = window.innerWidth / window.innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(window.innerWidth, window.innerHeight); }
   reset() {
     this.sprintView.reset();
+    this.ghost?.reset();
     if (!(this.car instanceof LongboardRider)) this.car.exhaust?.reset();
     this.dustAccumulator = 0;
     this.dust.forEach(particle => particle.life = 0);
     this.skidMarks.reset();
+  }
+
+  private clearGhost() {
+    if (!this.ghost) return;
+    this.scene.remove(this.ghost.group); disposeObject(this.ghost.group); this.ghost = undefined;
   }
 
   render(race: Race, controls: Controls, dt: number, pose: VehiclePose = capturePose(race)) {
@@ -177,6 +187,10 @@ export class RallyRenderer {
     }
     this.car.setLivery(settings.livery);
     this.rivals.update(race, pose.rivals, active ? dt : 0);
+    if (race.phase !== 'menu' && race.ghost.replay && !this.ghost) {
+      this.ghost = new GhostVehicle(race.vehicle); this.scene.add(this.ghost.group);
+    }
+    this.ghost?.update(race, pose.elapsed, pose.position);
     if (race.mode === 'items' && !this.itemVisuals) { this.itemVisuals = new ItemVisuals(race); this.scene.add(this.itemVisuals.group); }
     this.itemVisuals?.update(race, pose);
     this.car.group.updateWorldMatrix(true, false);
@@ -189,7 +203,7 @@ export class RallyRenderer {
       contact.y = this.track.surfaceHeight(contact.x, contact.z) + 0.065;
     }
     // Use actual tyre contacts: a sideways car must not emit straight, centred trails.
-    this.skidMarks.update(this.rearLeft, motorcycle ? null : this.rearRight, active && !pose.airborne && pose.speed > 3 && Math.abs(race.lane) < this.track.roadWidth / 2 - 0.3 ? race.rearWheelSlip : 0, pose.elapsed);
+    this.skidMarks.update(this.rearLeft, motorcycle ? null : this.rearRight, active && !pose.airborne && Math.abs(pose.speed) > 3 && Math.abs(race.lane) < this.track.roadWidth / 2 - 0.3 ? race.rearWheelSlip : 0, pose.elapsed);
 
     if (menu && race.isLongboard) {
       this.targetPosition.set(p.x + frame.rx * 3.5 - frame.tx * 4.5, p.y + 2.3, p.z + frame.rz * 3.5 - frame.tz * 4.5);
@@ -250,7 +264,7 @@ export class RallyRenderer {
     const forwardX = -Math.sin(pose.travelHeading); const forwardZ = -Math.cos(pose.travelHeading);
     const intensity = race.rearWheelSlip;
     const amount = settings.quality === 'low' ? 18 : 42;
-    if (!pose.airborne && pose.speed > 3 && (!race.isLongboard || Math.abs(race.lane) > this.track.roadWidth / 2)) this.dustAccumulator += dt * amount * Math.min(1, pose.speed / 15) * (1 + intensity);
+    if (!pose.airborne && Math.abs(pose.speed) > 3 && (!race.isLongboard || Math.abs(race.lane) > this.track.roadWidth / 2)) this.dustAccumulator += dt * amount * Math.min(1, Math.abs(pose.speed) / 15) * (1 + intensity);
     while (this.dustAccumulator >= 1) {
       this.dustAccumulator--;
       const side = this.dustCursor % 2 === 0 ? -1 : 1;

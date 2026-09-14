@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { LONGBOARD, type VehicleDefinition } from '../content/vehicles';
 import { boardOutline } from '../content/board-outline';
 import { LIVERIES } from '../settings';
-import { idleLongboardPose, type LongboardPose } from '../simulation/longboard-motion';
+import { idleLongboardPose, longboardCarve, type LongboardPose } from '../simulation/longboard-motion';
 import { RiderModel } from './longboard-rider-model';
 import { RiderRig } from './longboard-rider-pose';
 
@@ -66,12 +66,16 @@ export class LongboardRider {
     this.handDown = pose?.handsDown ?? this.handDown + (Number(sliding) - this.handDown) * damping;
     this.footbrake = pose?.footbrake ?? this.footbrake + (Number(brake) - this.footbrake) * damping;
     this.push = pose?.push ?? this.push + (Number(pushing) - this.push) * damping;
-    const leanTarget = -steering * Math.min(1, speed / 7) * (0.28 - this.handDown * 0.22);
+    const leanTarget = -steering * Math.cos(pose?.stanceYaw ?? 0) * Math.min(1, speed / 7) * (0.28 - this.handDown * 0.22);
     this.lean = pose ? leanTarget : this.lean + (leanTarget - this.lean) * damping;
     this.suspension.rotation.z = this.lean * 0.16;
     this.wheels.forEach(wheel => { wheel.rotation.x -= speed * dt * (1 - this.slide * 0.85) / (this.vehicle.board?.wheelRadius ?? 0.055); });
     Object.assign(this.fallbackPose, { tuck: this.tuck, slide: this.slide, handsDown: this.handDown,
       footbrake: this.footbrake, push: this.push, pushPhase: this.clock * 7 });
+    const carve = brake || sliding || pushing ? 0 : longboardCarve(speed, steering);
+    const carveResponse = carve * this.fallbackPose.carve < 0 ? 3 : 7;
+    this.fallbackPose.carve += (carve - this.fallbackPose.carve) * (dt > 0 ? 1 - Math.exp(-dt * carveResponse) : 1);
+    if (sliding) this.fallbackPose.supportSide = Math.sign(driftAngle || -steering || -1);
     this.rig.update(pose ?? this.fallbackPose, this.lean, driftAngle);
   }
 }

@@ -9,14 +9,15 @@ Built with **Three.js, TypeScript, and Vite**. The in-game menus, HUD, and optio
 ## Highlights
 
 - **Six-car races:** five AI opponents with different cars and driving speeds, corner braking, following, and overtaking behavior.
-- **Ten race stages:** seven outdoor routes, including three rolling jump stages, and three enclosed indoor venues, with road widths from 14 to 22 meters and different surface grip.
-- **Car and motorcycle modes:** four cars and two motorcycles with matching AI opponents. Bikes include riders, two-wheel models and cornering lean, with distinct sport and enduro handling.
+- **Twenty-seven race stages:** twenty-four outdoor routes, including five jump stages and nine endurance circuits, plus three enclosed indoor venues. Seventeen long courses span 14–18 km, now including cloverleaf, spiral, crescent, staircase-hairpin and closed-circuit jump challenges.
+- **Car and motorcycle modes:** seven cars and two motorcycles with matching AI opponents. Bikes include riders, two-wheel models and cornering lean, with distinct sport and enduro handling.
 - **Manual steering:** turn the car yourself, with smooth steering input and no automatic cornering or lane centering.
 - **Hold-to-drift handbrake:** longer Space holds build a larger slide; releasing the key restores grip gradually.
 - **Drift-powered nitro:** build charge while sliding, then hold Shift or the HUD button for faster acceleration.
 - **Terrain-driven jumps:** accelerate over rounded crests to take off; cars and motorcycles share gravity, landing contact and airtime indicators with all five opponents.
 - **A steady camera:** road-facing chase and low camera views, interpolated movement, and no added screen shake or suspension bounce.
 - **Race position and time trials:** live standings, finish order, five sector splits, medals, and local personal bests.
+- **Personal-best ghosts:** each start replays the best matching run as a translucent cyan car, motorcycle, or longboard rider.
 - **Rally atmosphere:** natural lighting, procedural scenery and cars, dust trails, fading tyre marks, engine audio, and pace notes.
 
 ## Screenshots
@@ -70,7 +71,7 @@ The build is written to `dist/`. Open the preview URL printed in the terminal. D
 | Action | Keyboard |
 | --- | --- |
 | Accelerate | `W` / `↑` |
-| Brake | `S` / `↓` |
+| Brake / reverse | Hold `S` / `↓`; keep holding after stopping to reverse |
 | Steer left / right | `A` / `D`, or `←` / `→` |
 | Hold handbrake / drift | Hold `Space`; release to restore grip |
 | Nitro boost | Hold either `Shift` key or the nitro button; drift to recharge |
@@ -79,7 +80,9 @@ The build is written to `dist/`. Open the preview URL printed in the terminal. D
 | Recover to the road | `R` — adds a 5-second time penalty |
 | Pause / resume | `Esc` / `P` |
 
-Touch devices have on-screen steering, throttle, brake, handbrake, and nitro buttons. Optional automatic throttle lets you focus on steering and braking; it does not steer for you.
+Cars and motorcycles can reverse at up to **30 km/h**, with **R** shown on the gear display. Hold `W / ↑` to brake while reversing, then move forward after stopping. Steering also works in reverse, and the handbrake stops movement in either direction.
+
+Touch devices have on-screen steering, throttle, brake / reverse, handbrake, and nitro buttons. Optional automatic throttle lets you focus on steering and braking; it does not steer for you.
 
 Choose **选择地图** (Select stage) or **选择车辆** (Select vehicle) from the main menu, then press **开始赛段** (Start stage). The stage catalog has All, Outdoor, Indoor, and **起伏飞跃** (Hills & Jumps) filters. Choose Hills & Jumps for the new elevated routes, or **室内场馆** for the enclosed venues. Return to the main menu before changing the stage or car during a race.
 
@@ -89,22 +92,45 @@ Distances are approximate. Each route has its own scenery, grip, and medal targe
 
 | Stage | In-game name | Difficulty | Length | Road width | Surface |
 | --- | --- | --- | --- | --- | --- |
-| Green Valley | 绿谷短途 | Beginner | 1.97 km | 22 m | Firm gravel, gentle bends, high grip |
-| Pine Ridge | 松岭山道 | Standard | 4.09 km | 18 m | Loose gravel, forest roads, linked S-bends |
-| Red Canyon | 赤岩峡谷 | Advanced | 4.54 km | 16 m | Loose dirt, fast sections followed by sharp turns |
-| Frost Pass | 雪岭关隘 | Expert | 5.42 km | 14 m | Packed snow, linked corners, reduced grip and braking |
-| Hangar Run | 机库练习场 | Beginner | 0.94 km | 22 m | Indoor dry asphalt, broad bends, warm overhead lamps |
-| Rally Dome | 穹顶拉力馆 | Advanced | 1.49 km | 18 m | Indoor packed clay, linked switchbacks, tiered grandstands |
-| Depot Sprint | 货运仓储馆 | Expert | 1.43 km | 14 m | Indoor polished concrete, tight turns, warehouse service bays |
-| Meadow Hills | 丘陵牧场 | Standard | 2.39 km | 22 m | Rolling grassland, three rounded gravel crests |
-| Quarry Run | 砂岩采石场 | Advanced | 3.20 km | 20 m | Sandstone slopes, four jumps and long landing runouts |
-| Skyline Crest | 云脊飞跃 | Expert | 3.35 km | 18 m | High ridges, four large crests and steep descents |
+| Green Valley | 绿谷短途 | Beginner | 3.94 km | 22 m | Firm gravel, gentle bends, high grip |
+| Pine Ridge | 松岭山道 | Standard | 8.19 km | 18 m | Loose gravel, forest roads, linked S-bends |
+| Red Canyon | 赤岩峡谷 | Advanced | 9.07 km | 16 m | Loose dirt, fast sections followed by sharp turns |
+| Frost Pass | 雪岭关隘 | Expert | 10.83 km | 14 m | Packed snow, linked corners, reduced grip and braking |
+| Hangar Run | 机库练习场 | Beginner | 2.62 km | 22 m | Indoor asphalt circuit, broad bends, warm overhead lamps |
+| Rally Dome | 穹顶拉力馆 | Advanced | 3.12 km | 18 m | Indoor clay circuit, linked S-bends, tiered grandstands |
+| Depot Sprint | 货运仓储馆 | Expert | 2.77 km | 14 m | Indoor concrete circuit, tight turns, warehouse service bays |
+| Meadow Hills | 丘陵牧场 | Standard | 4.78 km | 22 m | Rolling grassland, three rounded gravel crests |
+| Quarry Run | 砂岩采石场 | Advanced | 6.41 km | 20 m | Sandstone slopes, four jumps and long landing runouts |
+| Skyline Crest | 云脊飞跃 | Expert | 6.70 km | 18 m | High ridges, four large crests and steep descents |
+| Jade Serpent | 雨林蛇行 | Advanced | 14.39 km | 18 m | Wet rainforest asphalt, linked S-bends and tightening corners |
+| Dune Switchbacks | 金沙千折 | Expert | 15.48 km | 16 m | Sandy gravel, mesa traverses and grouped hairpins |
+| Frost Serpent | 冰原连环 | Expert | 14.92 km | 16 m | Packed snow, two ridge crossings and technical corners |
+| Amber Ridge | 秋岭百弯 | Standard | 14.58 km | 20 m | Autumn gravel, broad fast/slow corner combinations |
+| Basalt Run | 黑岩火山道 | Advanced | 15.09 km | 16 m | Volcanic gravel, reversals and blind uphill bends |
+| Highland Crest | 高地飞跃马拉松 | Advanced | 14.30 km | 20 m | Four straight ramps with runouts before linked bends |
+| Forest Enduro Ring | 森林耐力环线 | Advanced | 14.80 km | 22 m | Asphalt circuit, different S-bend rhythms on each side |
+| Mesa Technical Ring | 赤台回环 | Expert | 16.53 km | 18 m | Red gravel circuit, compound bends and switchbacks |
+| Glacier Ring | 冰川回环 | Expert | 15.32 km | 16 m | Snow circuit, ridge hairpins and inward S-bends |
+| Caldera Ring | 火山口环线 | Advanced | 15.52 km | 20 m | Asphalt circuit around dark highlands, linked compound bends |
+| Maple Grand Ring | 枫林大环线 | Standard | 17.55 km | 22 m | Broad autumn gravel circuit, long arcs and repeated S-bends |
+| Dune Grand Loop | 沙海连环 | Advanced | 16.41 km | 18 m | Three-lobed sandy gravel circuit, outer hairpins and inner switchbacks |
+| Clover Garden | 三叶草环线 | Standard | 14.61 km | 24 m | Three-leaf asphalt circuit, broad outer arcs and tight inner combinations |
+| Corkscrew Ascent | 螺旋登云 | Advanced | 15.28 km | 21.6 m | Spiral mountain climb, 410 m ascent with repeated small S-bends |
+| Crescent Dunes | 月牙沙丘 | Advanced | 16.74 km | 21.6 m | Crescent-shaped sand circuit, outer traverse and a separate inner return |
+| Canyon Staircase | 峡谷天梯 | Expert | 17.90 km | 21.6 m | Stepped canyon hairpins, alternating traverses, climbs and descents |
+| Triple Crest Circuit | 三峰飞跃环 | Advanced | 14.98 km | 26.4 m | Three jumps on straight corridors around a technical closed circuit |
 
-All three indoor venues have a complete roof, four enclosing walls, flat floors, ceiling beams, and overhead fixtures. Hangar Run has steel framing and service containers; Rally Dome has an arched roof and grandstands; Depot Sprint has a low ceiling, storage racks, crates, and closed shutters. They use the same six-car, five-gate point-to-point race format and separate records. Outer walls stop the player without turning the car, and the camera stays inside the enclosure. Indoor scenery replaces outdoor terrain and vegetation, with instanced fixtures and shared lighting to keep rendering work bounded.
+The original 16 routes retain their previously doubled distances. Nineteen long routes add seventeen car/motorcycle courses and two longboard descents, bringing the total to 35. Long routes measure 14.30–17.90 km, each with 36–75 corner callouts. Records remain separate for each route.
+
+Use **趣味挑战** (Adventure Challenges), **长途多弯** (Long & Winding) and **闭环赛道** (Circuits) to filter the catalogue. Adventure Challenges groups the five new layouts; Corkscrew Ascent and Canyon Staircase also show elevation profiles.
+
+Twelve circuits include three indoor venues and nine outdoor routes: Forest Enduro Ring, Mesa Technical Ring, Glacier Ring, Caldera Ring, Maple Grand Ring, Dune Grand Loop, Clover Garden, Crescent Dunes and Triple Crest Circuit. Every circuit runs one lap through five ordered timing gates to a shared start/finish line, with smoothly joined road and elevation.
+
+All three indoor venues have a complete roof, four enclosing walls, flat floors, ceiling beams, and overhead fixtures. Hangar Run has steel framing and service containers; Rally Dome has an arched roof and grandstands; Depot Sprint has a low ceiling, storage racks, crates, and closed shutters. Each route forms a smooth closed circuit with one shared start/finish line. Six vehicles race one lap through five ordered timing gates, with separate records for each stage. Outer walls stop the player without turning the car, and the camera stays inside the enclosure. Indoor scenery replaces outdoor terrain and vegetation, with instanced fixtures and shared lighting to keep rendering work bounded.
 
 ### Hills and jumps
 
-Stages 08–10 have continuous climbs, descents and rounded earth ramps. Yellow **JUMP** signs and the co-driver HUD warn of approaching crests; stage cards show an elevation profile and jump locations. No jump key is needed: low speeds keep the tyres on the road, while faster approaches produce longer, higher flights. Line up before takeoff and leave braking room after landing.
+Stages 08–10, Highland Crest (16) and Triple Crest Circuit (27) have continuous climbs, descents and rounded earth ramps. Triple Crest Circuit places its three jumps on straight corridors with landing runouts before each corner group. Yellow **JUMP** signs and the co-driver HUD warn of approaching crests; stage cards show an elevation profile and jump locations. No jump key is needed: low speeds keep the tyres on the road, while faster approaches produce longer, higher flights. Line up before takeoff and leave braking room after landing.
 
 Airborne vehicles retain their horizontal momentum and fall under gravity. Steering, tyre braking, drift charging and nitro acceleration resume on ground contact. The HUD shows airtime and height above the road; ground dust and tyre marks stop during flight, and the contact shadow stays on the surface. The camera keeps its road-facing horizon and eases down after landing without an impact shake or rebound. Existing routes retain their previous grounded behavior.
 
@@ -118,6 +144,9 @@ The table lists normal top speeds for undamaged vehicles, capped at **250 km/h**
 | FALCON R4 | Rally car / AWD | 250 km/h | Balanced acceleration, steering, and drift |
 | COMET RS | Coupe / RWD | 250 km/h | Strong acceleration and larger slides; countersteer early |
 | NOMAD T4 | Off-road pickup / AWD | 210 km/h | Durable, less off-road drag, slower steering |
+| THUNDER V8 | Muscle car / RWD | 245 km/h | Strong acceleration, wide slides, longer braking distance |
+| VORTEX GT | Mid-engine supercar / RWD | 250 km/h | Fast acceleration, strong braking and grip, vulnerable off-road |
+| SUMMIT X4 | Expedition SUV / AWD | 200 km/h | Tough, stable, low shoulder drag, deliberate steering |
 | APEX R600 | Sport motorcycle / RWD | 250 km/h | Fast acceleration, tucked rider, responsive cornering |
 | TRAIL X450 | Enduro motorcycle / RWD | 215 km/h | High bars, off-road tyres, less shoulder drag and damage |
 
@@ -127,11 +156,15 @@ Three player liveries are available: Sandstone White, Forest Green, and Racing R
 
 Select **摩托车模式** (Motorcycle mode) in the main menu or garage, choose **APEX R600** or **TRAIL X450**, then start a stage. **汽车模式** switches back to cars. Changes are available before a race; vehicle choice and livery persist, and each vehicle has separate records.
 
-Use `W / ↑` for throttle, `S / ↓` to brake, `A / D` to steer and lean, and `Space` for rear-wheel braking. Slide while steering to charge nitro, then release the rear brake and hold `Shift` to boost. The sport bike accelerates faster; the enduro bike loses less speed and condition on the shoulder. Bikes slide less than cars, with riders leaning into turns and steady chase / low cameras. All regular stages support motorcycles in classic and item races, with five motorcycle opponents.
+Use `W / ↑` for throttle, `S / ↓` to brake and then reverse, `A / D` to steer and lean, and `Space` for rear-wheel braking. Slide while steering to charge nitro, then release the rear brake and hold `Shift` to boost. The sport bike accelerates faster; the enduro bike loses less speed and condition on the shoulder. Bikes slide less than cars, with riders leaning into turns and steady chase / low cameras. All regular stages support motorcycles in classic and item races, with five motorcycle opponents.
 
 ## Racing and drifting
 
-All six cars start after the same countdown. AI drivers adjust their speed for corners and grip, look for a free neighboring lane, and slow down behind traffic. Professional mode makes their pace faster.
+All six cars start after the same countdown. AI drivers adjust their speed for corners and grip, look for a free neighboring lane, and slow down behind traffic. Easy, Medium and Hard progressively increase their pace and overtaking frequency.
+
+Hard rivals use outside–apex–outside lines, higher corner speeds and quicker throttle response. Cars drift with countersteer; motorcycles use smaller rear-wheel slides. These slides charge a finite nitro tank. Hard cars and motorcycles start with 60% charge, then boost on clear exits and straights with visible exhaust flames. Nitro shares the player rules: 100% capacity, 25% drain per second and +70 km/h top speed, followed by a smooth return to normal speed. Traffic, tight corners, flight, collisions and item stuns interrupt boosts. Longboards do not receive nitro.
+
+All vehicles can collide with the player and one another. Contacts follow each vehicle's size and orientation: rear-end and head-on impacts exchange momentum, while side contact pushes vehicles sideways. Heavier vehicles move less under the same impact, and hard hits reduce player condition. Continuous collision checks prevent high-speed pass-through, keep vehicles inside the course barriers, and let airborne vehicles pass above others when there is enough clearance. Finished opponents no longer block the road.
 
 The HUD shows your position and the distance to each opponent. Final position follows the actual finish order. Opponents still on the course are listed with their progress at the moment you finish. Recovery penalties affect your personal time-trial score, not the order in which cars cross the line. Pausing freezes every car; restarting returns the full field to the grid.
 
@@ -164,12 +197,12 @@ Props share instanced geometry, distant props are culled, and projectile/trap po
 
 ## Longboard downhill
 
-Select **长板速降**, choose a route with **选择地图** and a board with **选择长板**, then select **开始速降**. Six dedicated asphalt courses range from the 2.04 km / 150 m Jade Forest beginner descent to the 4.03 km / 480 m Mist Ridge endurance route. Ridgeline Descent, Sunset Foothills, Amber Switchbacks and Red Cliff Drop add different corner layouts, road widths, grip and scenery. Route cards include a map and elevation profile.
+Select **长板速降**, choose a route with **选择地图** and a board with **选择长板**, then select **开始速降**. Eight dedicated asphalt courses range from the 4.09 km / 150 m Jade Forest beginner descent to the 15.60 km / 640 m Terrace Switchbacks expert descent. Cedar Descent adds a 14.55 km / 540 m forest endurance route with frequent linked bends. Ridgeline Descent, Sunset Foothills, Amber Switchbacks and Red Cliff Drop add different corner layouts, road widths, grip and scenery. Route cards include a map and elevation profile.
 
 Choose from **RIDGELINE DH**, **BREEZE CR42**, **NEEDLE DH36**, **SWITCHBLADE FR**, **CARBON AERO** and **ATLAS ENDURANCE**. Deck silhouettes, dimensions, wheelbases and wheel colors vary, as do actual steering, grip, pushing, braking, slide braking and durability. Race five AI riders on mixed boards, with full-face helmets, slide gloves and protective gear. Downhill route and equipment preferences are saved separately from car/motorcycle selections; records are separated by course, board, difficulty and auto-push setting.
 
 - **W / Up:** push off at low speed (below approximately 32 km/h).
-- **A / D or Left / Right:** steer by shifting weight.
+- **A / D or Left / Right:** shift weight into corners; faster, deeper turns lower the rider into an inside-hand carve with the other arm extended.
 - **S / Down:** footbrake; hold to stop.
 - **Space:** hands-down heelside/toeside slides, with crouch, glove contact and recovery.
 - **X:** standing speed checks, with arms extended and lighter braking.
@@ -178,7 +211,7 @@ Choose from **RIDGELINE DH**, **BREEZE CR42**, **NEEDLE DH36**, **SWITCHBLADE FR
 
 Double-tapping Space rotates rider and board 180 degrees while preserving downhill travel. Holding Space for 0.6 seconds begins with a hands-down slide, then automatically transitions into the 180-degree Switch on the opposite side; release before another switch can begin. Switch swaps the physical leading foot, pushing foot and footbraking foot while steering inputs retain their direction. Animations include preload, shoulder counter-rotation, a planted slide glove and progressive recovery. Pausing freezes the action; recovery keeps the completed stance; restarting restores Regular. See [movement references and mappings](docs/longboard-actions.md).
 
-Gravity accelerates the board downhill. Braking takes priority over pushing and tucking, and leaving the asphalt slows the rider and reduces condition. Board speed limits range from 92 to 120 km/h. This discipline has no nitro or items; the auto-throttle setting becomes automatic low-speed pushing. The rider animates pushing, tucking, leaning and braking, with a closer follow camera and wind/rolling audio.
+Gravity accelerates the board downhill. Braking takes priority over pushing and tucking, and leaving the asphalt slows the rider and reduces condition. All six undamaged boards share a **270 km/h** speed limit. This discipline has no nitro or items; the auto-throttle setting becomes automatic low-speed pushing. The rider animates pushing, tucking, leaning and braking, with a closer follow camera and wind/rolling audio.
 
 Five ordered checkpoints, finish rankings, medals, pause, restart and **R** recovery (+5 seconds) remain available. The HUD shows stance, slope and descended height, and downhill records are stored separately. Switching back to Classic or Item Rush restores the previously selected car or motorcycle and stage.
 
@@ -187,12 +220,14 @@ Five ordered checkpoints, finish rankings, medals, pause, restart and **R** reco
 | Setting | Behavior |
 | --- | --- |
 | Standard / lightweight graphics | Lightweight mode reduces vegetation and pixel density and targets 30 fps; standard mode targets 60 fps |
-| Club / professional handling | Professional mode reduces grip and increases opponent pace; applies to the next start |
+| Easy / Medium / Hard | Easy has stronger grip and slower rivals; Medium is balanced; Hard has lower grip and faster rivals. Defaults to Medium; applies to the next start |
 | Automatic throttle | Applies to the next start; braking and handbraking still take priority |
 | Sound / co-driver voice | Synthesized engine and gravel audio; Chinese pace-note speech depends on browser voice availability |
 | Camera | Road-facing chase or low view |
 
-Best times are stored separately for each **race mode × stage × vehicle × handling difficulty × throttle mode**. Previous Pine Ridge / FALCON R4 records remain readable. Settings and records use browser-local storage; there is no account or cloud synchronization.
+Best times are stored separately for each **race mode × stage × vehicle × handling difficulty × throttle mode**. Previous Pine Ridge / FALCON R4 records remain readable. Difficulty has three levels: **简单 (Easy), 中等 (Medium, default), 困难 (Hard)**. Easy provides stronger grip, slower opponents and larger following gaps; Hard reduces grip and raises rival pace and overtaking frequency. Changes apply at the next start. Former Club settings and records map to Medium, and Pro maps to Hard. AI previews braking distance, ramps acceleration and steering, and settles each lane change before planning the next. Settings and records use browser-local storage; there is no account or cloud synchronization.
+
+Every race automatically loads the matching personal-best ghost. Its translucent cyan vehicle replays position, steering, jumps and longboard poses on the race clock, freezes on pause, resets on restart and disappears after its finish time. Ghosts do not participate in collisions, items or standings. Best runs are selected by total time including rescue penalties; playback preserves the actual rescue teleports. The first finish creates a ghost and a faster finish replaces it. Legacy scores have no trajectory, so matching or beating that time creates one. Replays are saved asynchronously in IndexedDB; if storage is unavailable, the best ghost remains available for the current page session.
 
 The game pauses when its tab loses focus. Menus and paused scenes render on demand. Cars and cameras share interpolated poses; vegetation and rival wheels use instancing, and distant opponents are culled to limit rendering work.
 
@@ -230,6 +265,6 @@ The tests cover manual steering, sustained handbraking, speed limits, checkpoint
 
 ## Scope and troubleshooting
 
-This is an arcade rally game with AI opponents, not online multiplayer. AI drivers avoid traffic, and indoor outer walls contain the player. Vehicle collision impulses, full tyre physics, suspension simulation, and collisions with internal scenery or course barriers are not implemented.
+This is an arcade rally game with AI opponents, not online multiplayer. AI drivers avoid traffic and all vehicles have arcade collision response. Continuous course barriers contain cars, motorcycles and longboards on indoor, outdoor and downhill tracks, including during jumps. Contact slows and damages the vehicle while allowing the player to steer away; outdoor guardrails mark the collision boundary. Full tyre physics, suspension simulation, rollovers, and collisions with internal scenery are not implemented.
 
 If the page reports that the graphics engine is unavailable, check WebGL 2 support and hardware acceleration in your browser. On a slower device, choose lightweight graphics and keep only one game tab open. Browser speech availability varies by platform.

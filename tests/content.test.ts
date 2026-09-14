@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STAGES, getStage } from '../src/content/stages.ts';
-import { VEHICLES, getVehicle } from '../src/content/vehicles.ts';
+import { VEHICLES, getVehicle, vehicleClearance } from '../src/content/vehicles.ts';
 import { Track, SECTORS } from '../src/simulation/track.ts';
 import { Race, idleControls } from '../src/simulation/race.ts';
 import { bestTime, saveRecord } from '../src/settings.ts';
@@ -14,7 +14,7 @@ test('all maps have continuous roads, useful pace notes and smoothly joined shou
   const lengths = new Set<number>();
   for (const stage of STAGES) {
     const track = new Track(stage); lengths.add(track.length);
-    assert.ok(track.length > (stage.venue ? 600 : 1500) && track.length < 6500);
+    assert.ok(track.length > (stage.venue ? 1200 : 3000) && track.length < 18000);
     assert.ok(track.notes.length >= 2);
     for (let d = 30; d < track.length - 30; d += 37) {
       const p = track.position(d); const projection = track.project(p.x, p.z);
@@ -62,8 +62,8 @@ test('all vehicle speed limits are attainable, remain within 250 km/h and agree 
   }
 });
 
-test('different vehicle types change actual acceleration, drift and off-road durability', () => {
-  function drive(id: string, mode: 'acceleration' | 'drift' | 'damage') {
+test('different vehicle types change actual acceleration, drift and collision durability', () => {
+  function drive(id: string, mode: 'acceleration' | 'drift' | 'damage' | 'cruise') {
     const race = new Race(new Track(), getVehicle(id)); race.phase = 'racing';
     race.placeOnTrack(-1000, mode === 'damage' ? 12 : 0); race.speed = mode === 'acceleration' ? 0 : 35;
     for (let i = 0; i < 30; i++) race.update(STEP, { ...throttle, drift: mode === 'drift', steering: mode === 'drift' ? 1 : 0 });
@@ -72,6 +72,13 @@ test('different vehicle types change actual acceleration, drift and off-road dur
   assert.ok(drive('comet', 'acceleration').speed > drive('nomad', 'acceleration').speed * 1.3);
   assert.ok(Math.abs(drive('comet', 'drift').driftAngle) > Math.abs(drive('swift', 'drift').driftAngle) * 1.5);
   assert.ok(drive('nomad', 'damage').integrity > drive('comet', 'damage').integrity);
+  for (const id of ['thunder', 'vortex', 'summit']) assert.equal(getVehicle(id).id, id, 'new cars resolve without falling back to Falcon');
+  assert.ok(drive('vortex', 'acceleration').speed > drive('summit', 'acceleration').speed * 1.5);
+  assert.ok(Math.abs(drive('thunder', 'drift').driftAngle) > Math.abs(drive('vortex', 'drift').driftAngle) * 1.4);
+  assert.ok(drive('summit', 'damage').integrity > drive('vortex', 'damage').integrity);
+  for (const id of ['summit', 'vortex']) {
+    assert.ok(drive(id, 'damage').speed < drive(id, 'cruise').speed, `${id}: barrier contact must reduce speed`);
+  }
 });
 
 test('snow reduces grip and braking and narrower roads enforce their own boundaries', () => {
@@ -83,7 +90,10 @@ test('snow reduces grip and braking and narrower roads enforce their own boundar
   const snow = drive('alpine'); const valley = drive('valley');
   assert.ok(snow.speed > valley.speed, 'snow needs a longer braking distance');
   assert.ok(Math.abs(snow.heading - snow.travelHeading) > Math.abs(valley.heading - valley.travelHeading));
-  assert.ok(drive('alpine', 8).integrity < drive('valley', 8).integrity);
+  // Lane 8 is still drivable on Alpine; cross its actual barrier for the damage comparison.
+  const narrowTrack = new Track(getStage('alpine'));
+  const outsideNarrowBarrier = narrowTrack.boundaryEdge - vehicleClearance(getVehicle('falcon')) + 0.5;
+  assert.ok(drive('alpine', outsideNarrowBarrier).integrity < drive('valley', outsideNarrowBarrier).integrity);
 });
 
 test('each stage requires five ordered forward gates and can finish with every vehicle', () => {
@@ -109,9 +119,9 @@ test('records remain isolated across every stage, vehicle and driving mode and p
     assert.equal(bestTime(original), 110);
     let score = 200;
     const entries: { race: Race; score: number }[] = [];
-    for (const stage of STAGES) for (const vehicle of VEHICLES) for (const difficulty of ['club', 'pro'] as const) for (const auto of [false, true]) {
+    for (const stage of STAGES) for (const vehicle of VEHICLES) for (const difficulty of ['easy', 'medium', 'hard'] as const) for (const auto of [false, true]) {
       const race = new Race(new Track(stage), vehicle); race.difficulty = difficulty; race.autoThrottle = auto;
-      const legacy = race.stageId === 'pine' && race.vehicleId === 'falcon' && difficulty === 'club' && !auto;
+      const legacy = race.stageId === 'pine' && race.vehicleId === 'falcon' && difficulty === 'medium' && !auto;
       assert.equal(bestTime(race), legacy ? 110 : null);
       const time = legacy ? 100 : score++;
       assert.ok(saveRecord(time, race)); entries.push({ race, score: time });

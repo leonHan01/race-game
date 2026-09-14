@@ -34,6 +34,7 @@ export class RiderModel {
   readonly root = new THREE.Group();
   readonly pelvis: THREE.Mesh;
   readonly torso: THREE.Mesh;
+  readonly neck: THREE.Mesh;
   readonly helmet = new THREE.Group();
   readonly legs: THREE.Mesh[] = [];
   readonly arms: THREE.Mesh[] = [];
@@ -68,6 +69,8 @@ export class RiderModel {
     this.pelvis = part('rider-pelvis', [
       [contour([[-.12, .09, .075], [-.075, .15, .1], [.02, .145, .104], [.065, .125, .092]]), 'suit'],
       [contour([[.038, .143, .104], [.06, .127, .096]], 16), 'rubber'],
+      [oval(.024, .065, .075, [-.139, -.024, .008]), 'suit'],
+      [oval(.024, .065, .075, [.139, -.024, .008]), 'suit'],
     ]);
     this.torso = part('rider-torso', [
       [contour([[0, .126, .092], [.075, .13, .092], [.21, .178, .102], [.31, .205, .096], [.355, .178, .087], [.395, .073, .06], [.41, .063, .056]]), 'suit'],
@@ -76,8 +79,13 @@ export class RiderModel {
       [contour([[.255, .196, .106], [.282, .204, .104]], 16), 'accent'],
       [new THREE.BoxGeometry(.012, .235, .01).translate(0, .225, -.104), 'rubber'],
       [new THREE.BoxGeometry(.008, .03, .01).translate(0, .327, -.105), 'trim'],
-      [oval(.092, .16, .037, [0, .24, .10]), 'suit'],
+      [oval(.087, .148, .032, [0, .23, .105]), 'rubber'],
+      [contour([[.105, .136, .096], [.14, .149, .10]], 10, Math.PI - .9, 1.8), 'accent'],
+      ...[.17, .21, .25, .29].map(y => [oval(.052, .007, .009, [0, y, .137]), 'trim'] as [THREE.BufferGeometry, Pigment]),
       [contour([[.396, .074, .061], [.412, .065, .057]]), 'rubber'],
+    ]);
+    this.neck = part('rider-neck', [
+      [contour([[0, .055, .05], [.035, .049, .045], [.09, .047, .043], [.12, .051, .047]], 12), 'suit'],
     ]);
     // Full-face shell: swept brow, wrap-around visor and a rounded integrated chin bar.
     this.helmet.name = 'full-face-helmet'; this.root.add(this.helmet);
@@ -93,6 +101,7 @@ export class RiderModel {
       [oval(.034, .15, .143, [0, .015, .008]), 'accent'],
       [oval(.015, .01, .029, [-.061, .132, -.028]), 'rubber'],
       [oval(.015, .01, .029, [.061, .132, -.028]), 'rubber'],
+      [oval(.07, .015, .012, [0, -.039, .138]), 'rubber'],
     ], this.helmet);
     const visorGeometry = contour([[-.048, .123, .146], [-.012, .131, .151], [.035, .126, .145], [.064, .109, .127]], 24, -1.4, 2.8);
     const visor = new THREE.Mesh(visorGeometry, new THREE.MeshStandardMaterial({ color: '#193747', metalness: .65, roughness: .16 }));
@@ -116,12 +125,13 @@ export class RiderModel {
       ]));
       this.knees.push(part(`${side}-knee`, [
         [oval(.068, .069, .069), 'rubber'],
-        [oval(.061, .068, .027, [0, 0, -.06]), 'suit'],
+        [oval(.061, .068, .027, [0, 0, -.06]), 'paint'],
         [oval(.031, .009, .008, [0, .005, -.086]), 'accent'],
       ]));
       this.arms.push(part(`${side}-upper-arm`, [
         [contour([[0, .055, .059], [.055, .065, .068], [.14, .055, .057], [.24, .042, .044], [.29, .039, .042]]), 'paint'],
         [oval(.064, .065, .067, [0, .02, 0]), 'paint'],
+        [oval(.045, .055, .016, [0, .035, -.055]), 'suit'],
         [contour([[.078, .065, .068], [.107, .062, .065]]), 'accent'],
         [contour([[.15, .056, .059], [.24, .044, .046], [.29, .041, .044]], 6, 1.4, 2.9), 'suit'],
       ]));
@@ -130,7 +140,7 @@ export class RiderModel {
         [contour([[.035, .05, .052], [.085, .054, .057], [.19, .041, .044]], 7, -1.25, 2.5), 'paint'],
         [contour([[.216, .034, .038], [.246, .031, .035]]), 'accent'],
       ]));
-      this.elbows.push(part(`${side}-elbow`, [[oval(.046, .047, .047), 'rubber']]));
+      this.elbows.push(part(`${side}-elbow`, [[oval(.046, .047, .047), 'rubber'], [oval(.038, .03, .047, [0, -.012, .008]), 'suit']]));
       this.shoes.push(part(`${side}-foot`, [
         [oval(.057, .035, .129, [0, -.018, -.024]), 'paint'],
         [oval(.054, .041, .12, [0, .002, -.021]), 'rubber'],
@@ -139,12 +149,15 @@ export class RiderModel {
         ...[-.004, -.026, -.048].map(z => [new THREE.BoxGeometry(.062, .005, .009).translate(0, .055, z), 'trim'] as [THREE.BufferGeometry, Pigment]),
         [oval(.004, .014, .047, [-.053, .004, -.026]), 'accent'],
         [oval(.004, .014, .047, [.053, .004, -.026]), 'accent'],
+        [oval(.038, .024, .029, [0, .01, -.122]), 'suit'],
+        [oval(.043, .014, .014, [0, -.019, .095]), 'rubber'],
       ]));
       this.gloves.push(part(`${side}-slide-glove`, [
         [oval(.043, .031, .058), 'suit'],
         [oval(.041, .026, .029, [0, -.001, -.046]), 'suit'],
         [oval(.015, .019, .038, [i ? -.039 : .039, -.002, .005]), 'suit'],
         [oval(.04, .012, .03, [0, .028, -.011]), 'accent'],
+        ...[-.02, 0, .02].map(x => [oval(.006, .003, .017, [x, .024, -.047]), 'rubber'] as [THREE.BufferGeometry, Pigment]),
         [new THREE.CylinderGeometry(.041, .042, .014, 12).translate(0, -.038, -.012), 'paint'],
         [new THREE.CylinderGeometry(.026, .026, .008, 12).rotateX(Math.PI / 2).translate(0, 0, .057), 'rubber'],
       ]));

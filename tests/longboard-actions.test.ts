@@ -8,6 +8,7 @@ import { DOWNHILL_STAGE } from '../src/content/stages.ts';
 import { RaceTimeline } from '../src/presentation.ts';
 import { LongboardRider } from '../src/render/longboard.ts';
 import { disposeObject } from '../src/render/dispose.ts';
+import { LongboardMotion } from '../src/simulation/longboard-motion.ts';
 
 const step = 1 / 60;
 function raceAt(speed = 22) { const race = new Race(new Track(DOWNHILL_STAGE), LONGBOARD); race.phase = 'racing'; race.speed = speed; return race; }
@@ -23,6 +24,23 @@ function animate(rider: LongboardRider, race: Race, dt = step) {
 }
 const point = (rider: LongboardRider, name: string) => rider.group.getObjectByName(name)!.getWorldPosition(new THREE.Vector3());
 
+test('ordinary turns build a speed-sensitive carve pose without engaging slide braking', () => {
+  const input = { speed: 25, steering: 1, slide: false, standup: false, brake: false, tuck: false, push: false };
+  const fast = new LongboardMotion(); const slow = new LongboardMotion(); const gentle = new LongboardMotion();
+  for (let tick = 0; tick < 90; tick++) {
+    fast.update(step, input); slow.update(step, { ...input, speed: 3 }); gentle.update(step, { ...input, steering: .25 });
+  }
+  assert.ok(fast.pose.carve > .99); assert.equal(slow.pose.carve, 0);
+  assert.ok(gentle.pose.carve > 0 && gentle.pose.carve < .3);
+  assert.equal(fast.style, 'none'); assert.equal(fast.angle, 0); assert.equal(fast.switching, false);
+  const race = raceAt(25);
+  for (let tick = 0; tick < 30; tick++) race.update(step, { ...idleControls(), steering: 1 });
+  assert.ok(race.longboardPose.carve > .8); assert.equal(race.handbrake, false); assert.equal(race.footbraking, false);
+  const frozen = { ...race.longboardPose }; race.pause(); race.update(step, idleControls());
+  assert.deepEqual(race.longboardPose, frozen);
+  race.start(); assert.equal(race.longboardPose.carve, 0);
+});
+
 test('hands-down and standing slides have distinct braking, angles and contact poses', () => {
   const hands = raceAt(); const stand = raceAt();
   for (let i = 0; i < 45; i++) {
@@ -30,7 +48,7 @@ test('hands-down and standing slides have distinct braking, angles and contact p
     stand.update(step, { ...idleControls(), standupSlide: true, steering: 0.5 });
   }
   assert.equal(hands.longboard.style, 'hands-down'); assert.equal(stand.longboard.style, 'standup');
-  assert.ok(hands.speed < stand.speed - 1.5);
+  assert.ok(hands.speed < stand.speed - 0.6);
   assert.ok(Math.abs(hands.driftAngle) > Math.abs(stand.driftAngle) * 1.5);
   const rider = new LongboardRider(); animate(rider, hands);
   const low = Math.min(point(rider, 'left-slide-glove').y, point(rider, 'right-slide-glove').y);

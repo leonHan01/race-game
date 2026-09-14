@@ -38,6 +38,11 @@ test('motorcycle factory builds two road-contact wheels, a rider and bounded sha
       triangles += (object.geometry.index?.count ?? positions.count) / 3;
       assert.ok(Array.from(positions.array).every(Number.isFinite));
       assert.ok(Array.from(object.geometry.getAttribute('normal').array).every(Number.isFinite));
+      if (object.material instanceof THREE.MeshStandardMaterial && object.material.vertexColors) {
+        const colors = object.geometry.getAttribute('color');
+        assert.equal(colors?.count, positions.count, 'tinted metal batches supply a color for every vertex');
+        assert.ok(Array.from(colors.array).every(value => Number.isFinite(value) && value >= 0 && value <= 1));
+      }
     });
     assert.ok(meshes <= 15, `draw budget: ${meshes}`);
     assert.ok(triangles < (detail === 'player' ? 12000 : 5000), `${vehicle.id}/${detail}: ${triangles} triangles`);
@@ -66,6 +71,18 @@ test('motorcycles lean into both turns, stand upright at rest and lock only the 
   model.setLivery(2);
   assert.equal((model.suspension.getObjectByName('motorcycle-paint') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>).material.color.getHexString(), 'ae4133');
   disposeObject(model.group);
+});
+
+test('motorcycle headlamps remain visible in front of their sculpted housings', () => {
+  for (const vehicle of bikes) for (const detail of ['player', 'rival'] as const) {
+    const bike = new Motorcycle(vehicle, detail); bike.suspension.updateMatrixWorld(true);
+    for (const side of [-1, 1]) {
+      const enduro = vehicle.id === 'trail';
+      const ray = new THREE.Raycaster(new THREE.Vector3(enduro ? side * 0.04 : side * 0.205, enduro ? 1.22 : 1.233, -2), new THREE.Vector3(0, 0, 1));
+      assert.equal(ray.intersectObject(bike.suspension)[0]?.object.name, 'motorcycle-light', `${vehicle.id}/${detail}: headlight obscured`);
+    }
+    disposeObject(bike.group);
+  }
 });
 
 test('motorcycle races use matching AI and render their interpolated positions on every stage', () => {

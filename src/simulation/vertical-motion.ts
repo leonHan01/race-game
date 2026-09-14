@@ -28,6 +28,16 @@ export class VerticalMotion {
     this.unsupportedTime = 0;
   }
 
+  /** Horizontal contact can move the tyres to a different part of the surface. */
+  rebaseGround(height: number) {
+    this.groundHeight = height;
+    if (!this.airborne || this.height <= height) {
+      if (this.airborne) this.lastAirTime = this.airTime;
+      this.height = height; this.airborne = false; this.airTime = 0;
+    }
+    this.clearance = Math.max(0, this.height - height);
+  }
+
   update(dt: number, ground: GroundMotion) {
     if (dt <= 0) return;
     const wasAirborne = this.airborne;
@@ -40,7 +50,7 @@ export class VerticalMotion {
     // A centimetre of tyre compliance absorbs isolated spline-sampling gaps.
     // Sustained loss of support still releases the car at a rounded crest.
     const detached = wasAirborne || nextHeight > ground.height + 0.012 || this.unsupportedTime >= 0.045;
-    if (separating && detached && (wasAirborne || ground.speed > 1)) {
+    if (separating && detached && (wasAirborne || Math.abs(ground.speed) > 1)) {
       this.height = nextHeight; this.velocity = velocity - GRAVITY * dt;
       this.airborne = true; this.airTime += dt;
       if (!wasAirborne) this.jumpCount++;
@@ -55,7 +65,7 @@ export class VerticalMotion {
     }
     this.groundHeight = ground.height;
     this.clearance = Math.max(0, this.height - ground.height);
-    const desiredPitch = this.airborne ? Math.atan2(this.velocity, Math.max(8, ground.speed)) : ground.pitch;
+    const desiredPitch = this.airborne ? Math.atan2(this.velocity * (ground.speed < 0 ? -1 : 1), Math.max(8, Math.abs(ground.speed))) : ground.pitch;
     const target = Math.max(-0.48, Math.min(0.48, desiredPitch));
     const change = (target - this.pitch) * (1 - Math.exp(-dt * 9));
     this.pitch += Math.max(-dt * 0.9, Math.min(dt * 0.9, change));

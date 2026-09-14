@@ -9,7 +9,7 @@ export class ExhaustFlames {
   private time = 0;
   private intensity = 0;
 
-  constructor(ports: readonly (readonly [number, number, number])[]) {
+  constructor(ports: readonly (readonly [number, number, number])[], color?: THREE.ColorRepresentation) {
     this.group.name = 'nitro-exhaust-flames'; this.group.visible = false; this.group.scale.setScalar(0);
     const profile = [[0.054, 0], [0.09, 0.12], [0.16, 0.35], [0.13, 0.65], [0.065, 1.05], [0, 1.5]];
     const outer = new THREE.LatheGeometry(profile.map(([radius, z]) => new THREE.Vector2(radius, z)), 12).rotateX(Math.PI / 2);
@@ -20,8 +20,9 @@ export class ExhaustFlames {
     this.material = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, blending: THREE.AdditiveBlending, toneMapped: false,
       uniforms: { time: { value: 0 }, strength: { value: 0 },
-        base: { value: new THREE.Color('#288fff') }, tip: { value: new THREE.Color('#ff8235') },
-        coreBase: { value: new THREE.Color('#edfdff') }, coreTip: { value: new THREE.Color('#52dcff') } },
+        opacity: { value: color === undefined ? 1 : 0.65 },
+        base: { value: new THREE.Color(color ?? '#288fff') }, tip: { value: color === undefined ? new THREE.Color('#ff8235') : new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.35) },
+        coreBase: { value: new THREE.Color('#edfdff') }, coreTip: { value: color === undefined ? new THREE.Color('#52dcff') : new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.6) } },
       vertexShader: `varying vec2 flameUv; varying float flameInner; attribute float innerLayer; uniform float time;
         void main() {
           flameUv = uv; flameInner = innerLayer; vec3 p = position; float bend = uv.y * uv.y;
@@ -29,14 +30,14 @@ export class ExhaustFlames {
           p.y += cos(time * 19.0 + p.z * 14.0) * 0.025 * bend;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }`,
-      fragmentShader: `varying vec2 flameUv; varying float flameInner; uniform float time; uniform float strength;
+      fragmentShader: `varying vec2 flameUv; varying float flameInner; uniform float time; uniform float strength; uniform float opacity;
         uniform vec3 base; uniform vec3 tip; uniform vec3 coreBase; uniform vec3 coreTip;
         void main() {
           float flow = 0.78 + 0.22 * sin(flameUv.y * 34.0 - time * 30.0 + sin(flameUv.x * 25.0 + time * 7.0));
           float fade = 1.0 - smoothstep(0.35, 1.0, flameUv.y);
           float gradient = smoothstep(0.12, 0.85, flameUv.y);
           vec3 color = mix(mix(base, tip, gradient), mix(coreBase, coreTip, gradient), flameInner);
-          gl_FragColor = vec4(color, strength * fade * flow * mix(0.8, 1.0, flameInner));
+          gl_FragColor = vec4(color, opacity * strength * fade * flow * mix(0.8, 1.0, flameInner));
           #include <colorspace_fragment>
         }`,
     });

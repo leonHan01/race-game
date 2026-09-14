@@ -7,8 +7,70 @@ import { Race, idleControls } from '../src/simulation/race.ts';
 import { RaceTimeline } from '../src/presentation.ts';
 import { RivalCars } from '../src/render/rivals.ts';
 import { disposeObject } from '../src/render/dispose.ts';
+import { DIFFICULTIES } from '../src/content/difficulties.ts';
+import { getVehicle } from '../src/content/vehicles.ts';
 
 const STEP = 1 / 60;
+
+function isolatedRival(track = new Track(), vehicleId = 'falcon') {
+  const race = new Race(track, getVehicle(vehicleId)); race.placeOnTrack(-10000);
+  race.opponents.cars.slice(1).forEach(car => { car.finishTime = 0; });
+  const car = race.opponents.cars[0];
+  Object.assign(car, { distance: -3000, lane: 0, targetLane: 0, planIn: 100 });
+  return { race, car };
+}
+
+test('difficulty produces progressively faster opponents in car, motorcycle and downhill modes', () => {
+  class DownhillStraight extends Track {
+    override grade() { return -0.2; }
+    override curvature() { return 0; }
+  }
+  for (const vehicle of ['falcon', 'apex', 'longboard']) {
+    const speeds = DIFFICULTIES.map(({ id }) => {
+      const { race, car } = isolatedRival(new DownhillStraight(), vehicle); race.difficulty = id;
+      for (let tick = 0; tick < 30 / STEP; tick++) race.opponents.update(STEP, race, tick * STEP);
+      assert.ok(car.speed <= car.vehicle.topSpeed / 3.6);
+      return car.speed;
+    });
+    assert.ok(speeds[1] > speeds[0] * 1.08 && speeds[2] > speeds[1] * 1.08, `${vehicle}: ${speeds}`);
+  }
+});
+
+test('acceleration and lane changes ease in and settle smoothly at different update rates', () => {
+  const results: number[] = [];
+  for (const dt of [1 / 30, 1 / 60, 1 / 120]) {
+    const { race, car } = isolatedRival(); car.speed = 25; car.targetLane = 4.2;
+    let laneSpeed = 0;
+    for (let tick = 0; tick < 8 / dt; tick++) {
+      const previousLane = car.lane; const previousSpeed = car.speed; const previousSteering = car.steering;
+      race.opponents.update(dt, race, tick * dt);
+      const nextLaneSpeed = (car.lane - previousLane) / dt;
+      assert.ok(Math.abs(nextLaneSpeed - laneSpeed) <= 3.2 * dt + 1e-8, 'bounded lateral acceleration');
+      assert.ok(car.lane >= previousLane && car.lane <= 4.2, 'no lane overshoot or oscillation');
+      assert.ok(Math.abs(car.steering - previousSteering) <= 7 * dt + 1e-8, 'smooth visible steering');
+      if (tick === 0) assert.ok(car.speed - previousSpeed < 9 * dt ** 2, 'gradual throttle application');
+      laneSpeed = nextLaneSpeed;
+    }
+    assert.ok(Math.abs(car.lane - 4.2) < 0.01 && laneSpeed < 0.01);
+    results.push(car.distance);
+  }
+  assert.ok(Math.max(...results) - Math.min(...results) < 1.5, 'similar progress across simulation rates');
+});
+
+test('rivals begin braking before a tight corner with bounded deceleration changes', () => {
+  class CornerTrack extends Track { override curvature(distance: number) { return distance >= 200 ? 0.045 : 0; } }
+  const { race, car } = isolatedRival(new CornerTrack());
+  car.distance = 0; car.speed = 65;
+  let previousAcceleration = 0; let brakedBeforeCorner = false;
+  for (let tick = 0; tick < 10 / STEP && car.distance < 200; tick++) {
+    race.opponents.update(STEP, race, tick * STEP);
+    assert.ok(car.acceleration >= previousAcceleration - 14 * STEP - 1e-8);
+    if (car.distance < 100 && car.acceleration < -2) brakedBeforeCorner = true;
+    previousAcceleration = car.acceleration;
+  }
+  assert.ok(brakedBeforeCorner);
+  assert.ok(car.speed < 20, `corner entry speed: ${car.speed}`);
+});
 
 test('all wider roads fit six separate starting cars, including the largest bodies', () => {
   for (const stage of STAGES) {
@@ -31,7 +93,8 @@ test('five rivals finish every map within their speed limits and keep safe same-
   for (const stage of STAGES) {
     const race = new Race(new Track(stage)); race.phase = 'racing'; race.placeOnTrack(-1000);
     const playerBefore = { position: { ...race.position }, heading: race.heading, speed: race.speed };
-    for (let tick = 0; tick < 220 / STEP && race.opponents.cars.some(car => car.finishTime === null); tick++) {
+    const timeLimit = Math.max(440, race.targetTime * 1.5);
+    for (let tick = 0; tick < timeLimit / STEP && race.opponents.cars.some(car => car.finishTime === null); tick++) {
       const previous = race.opponents.cars.map(car => car.distance);
       race.opponents.update(STEP, race, tick * STEP);
       for (let i = 0; i < 5; i++) {

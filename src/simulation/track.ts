@@ -6,7 +6,7 @@ export interface TrackFrame extends TrackPoint { tx: number; tz: number; rx: num
 export interface TrackProjection extends TrackFrame { distance: number; lane: number }
 export interface PaceNote { distance: number; direction: 'left' | 'right' | 'straight'; severity: number; label: string }
 export interface VenueBounds { minX: number; maxX: number; minZ: number; maxZ: number; floor: number; height: number }
-export const ROAD_WIDTH = 18;
+export const ROAD_WIDTH = 21.6;
 export const SECTORS = 5;
 export const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -15,7 +15,7 @@ function catmull(a: number, b: number, c: number, d: number, t: number) {
   return 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
 }
 
-/** Point-to-point rally stage, sampled by arc length. Units: metres. */
+/** Open rally stage or closed circuit, sampled by arc length. Units: metres. */
 export class Track {
   readonly points: TrackPoint[] = [];
   readonly distances: number[] = [0];
@@ -24,22 +24,26 @@ export class Track {
   readonly venueBounds: VenueBounds | null;
 
   get roadWidth() { return this.definition.roadWidth; }
+  get closed() { return Boolean(this.definition.closed); }
   get shoulderEdge() { return this.roadWidth / 2 + 2.5; }
+  /** Inner face of the continuous course barriers, measured from the centre line. */
+  get boundaryEdge() { return this.venueBounds ? this.roadWidth / 2 + 0.5 : this.shoulderEdge; }
   get hasJumps() { return Boolean(this.definition.jumps?.length); }
 
   constructor(readonly definition: StageDefinition = getStage('pine')) {
     const controls = definition.points;
-    for (let segment = 0; segment < controls.length - 1; segment++) {
-      const a = controls[Math.max(0, segment - 1)];
+    const control = (index: number) => controls[this.closed ? (index + controls.length) % controls.length : clamp(index, 0, controls.length - 1)];
+    for (let segment = 0; segment < controls.length - (this.closed ? 0 : 1); segment++) {
+      const a = control(segment - 1);
       const b = controls[segment];
-      const c = controls[segment + 1];
-      const d = controls[Math.min(controls.length - 1, segment + 2)];
+      const c = control(segment + 1);
+      const d = control(segment + 2);
       for (let i = 0; i < 70; i++) {
         const t = i / 70;
         this.points.push({ x: catmull(a.x, b.x, c.x, d.x, t), y: catmull(a.y, b.y, c.y, d.y, t), z: catmull(a.z, b.z, c.z, d.z, t) });
       }
     }
-    this.points.push({ ...controls[controls.length - 1] });
+    this.points.push({ ...controls[this.closed ? 0 : controls.length - 1] });
     for (let i = 1; i < this.points.length; i++) {
       const p = this.points[i - 1];
       const q = this.points[i];
@@ -48,7 +52,7 @@ export class Track {
     this.length = this.distances[this.distances.length - 1];
     const venue = definition.venue;
     if (venue) {
-      const footprint = [...this.points, this.position(-32), this.position(this.length + 40)];
+      const footprint = this.closed ? this.points : [...this.points, this.position(-32), this.position(this.length + 40)];
       const padding = venue.margin + this.roadWidth / 2;
       this.venueBounds = { minX: Math.min(...footprint.map(p => p.x)) - padding, maxX: Math.max(...footprint.map(p => p.x)) + padding,
         minZ: Math.min(...footprint.map(p => p.z)) - padding, maxZ: Math.max(...footprint.map(p => p.z)) + padding,
@@ -57,7 +61,8 @@ export class Track {
     let lastNote = -150;
     for (let distance = 100; distance < this.length - 80; distance += 20) {
       const curvature = this.curvature(distance);
-      if (Math.abs(curvature) < 0.0028 || distance - lastNote < 145) continue;
+      // The extended courses include wider bends that still need a fast-corner callout.
+      if (Math.abs(curvature) < 0.0014 || distance - lastNote < 145) continue;
       let peak = curvature;
       let apex = distance;
       for (let offset = 20; offset <= 100; offset += 20) {
@@ -72,7 +77,7 @@ export class Track {
   }
 
   sample(distance: number): TrackFrame {
-    const d = clamp(distance, 0, this.length - 0.00001);
+    const d = this.closed ? ((distance % this.length) + this.length) % this.length : clamp(distance, 0, this.length - 0.00001);
     let low = 0;
     let high = this.points.length - 1;
     while (low + 1 < high) {
@@ -86,11 +91,11 @@ export class Track {
     const len = Math.hypot(q.x - p.x, q.z - p.z);
     const tx = (q.x - p.x) / len;
     const tz = (q.z - p.z) / len;
-    const extension = distance < 0 ? distance : distance > this.length ? distance - this.length : 0;
+    const extension = this.closed ? 0 : distance < 0 ? distance : distance > this.length ? distance - this.length : 0;
     // Rendered ribbons, tyres, AI and collision height read the same crest profile.
     let elevation = p.y + (q.y - p.y) * f;
     for (const crest of this.definition.jumps ?? []) {
-      const offset = distance - crest.distance;
+      const offset = (this.closed ? d : distance) - crest.distance;
       const span = offset < 0 ? crest.approach : crest.landing;
       if (Math.abs(offset) < span) elevation += crest.height * (1 + Math.cos(Math.PI * offset / span)) / 2;
     }
@@ -99,8 +104,8 @@ export class Track {
   }
 
   grade(distance: number, span = 5): number {
-    const start = clamp(distance - span, 0, this.length - 0.01);
-    const end = clamp(distance + span, start + 0.01, this.length);
+    const start = this.closed ? distance - span : clamp(distance - span, 0, this.length - 0.01);
+    const end = this.closed ? distance + span : clamp(distance + span, start + 0.01, this.length);
     return (this.sample(end).y - this.sample(start).y) / (end - start);
   }
 
@@ -119,7 +124,7 @@ export class Track {
   }
 
   /** Read the nearest road coordinates without moving or steering the vehicle. */
-  project(x: number, z: number): TrackProjection {
+  project(x: number, z: number, referenceDistance?: number): TrackProjection {
     let nearest = Infinity;
     let segment = 0;
     let fraction = 0;
@@ -127,11 +132,29 @@ export class Track {
       const a = this.points[i]; const b = this.points[i + 1];
       const dx = b.x - a.x; const dz = b.z - a.z;
       const raw = ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz);
-      const t = clamp(raw, i === 0 ? -Infinity : 0, i === this.points.length - 2 ? Infinity : 1);
+      const t = clamp(raw, 0, 1);
       const squared = (x - a.x - dx * t) ** 2 + (z - a.z - dz * t) ** 2;
       if (squared < nearest) { nearest = squared; segment = i; fraction = t; }
     }
-    const distance = this.distances[segment] + (this.distances[segment + 1] - this.distances[segment]) * fraction;
+    if (!this.closed) {
+      // An infinite endpoint ray can cut across a winding course. Prefer its real
+      // road corridor, while still supporting runouts and explicit off-stage poses.
+      const roadSegment = segment;
+      const nearRoad = nearest <= (this.shoulderEdge + 4) ** 2;
+      const outsideReference = referenceDistance !== undefined && (referenceDistance < 0 || referenceDistance > this.length);
+      for (const i of [0, this.points.length - 2]) {
+        if (nearRoad && !outsideReference && roadSegment !== i) continue;
+        const a = this.points[i]; const b = this.points[i + 1];
+        const dx = b.x - a.x; const dz = b.z - a.z;
+        const raw = ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz);
+        if (i === 0 ? raw >= 0 : raw <= 1) continue;
+        const squared = (x - a.x - dx * raw) ** 2 + (z - a.z - dz * raw) ** 2;
+        if (squared < nearest) { nearest = squared; segment = i; fraction = raw; }
+      }
+    }
+    let distance = this.distances[segment] + (this.distances[segment + 1] - this.distances[segment]) * fraction;
+    // Keep race progress continuous when crossing the shared start/finish in either direction.
+    if (this.closed && referenceDistance !== undefined) distance += Math.round((referenceDistance - distance) / this.length) * this.length;
     const frame = this.sample(distance);
     return { ...frame, distance, lane: (x - frame.x) * frame.rx + (z - frame.z) * frame.rz };
   }

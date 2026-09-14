@@ -2,7 +2,10 @@ import { configureLongboardUI, updateLongboardHUD, longboardDialog } from './lon
 import type { Race } from '../simulation/race';
 import { clamp, SECTORS, Track, type TrackPoint } from '../simulation/track';
 import { bestTime, LIVERIES, saveSettings, settings } from '../settings';
+import { DIFFICULTIES, difficultyProfile, parseDifficulty, type Difficulty } from '../content/difficulties';
 import { STAGES } from '../content/stages';
+import { ENDURANCE_STAGES } from '../content/endurance-stages';
+import { ADVENTURE_STAGES } from '../content/adventure-stages';
 import { VEHICLES, roadMargin, type VehicleMode } from '../content/vehicles';
 import { vehicleThumbnail } from './vehicle-thumbnail';
 import { stageElevation } from './stage-elevation';
@@ -29,10 +32,14 @@ export const formatTime = (seconds: number | null) => {
 };
 
 
-export function vehicleModePicker(mode: VehicleMode, disabled = false) {
+export function vehicleModePicker(mode: VehicleMode, disabled = false, includeLongboard = false) {
   return `<div class="vehicle-mode-picker" role="group" aria-label="驾驶模式">${([
     ['car', 'falcon', '汽车模式'], ['motorcycle', 'apex', '摩托车模式'],
-  ] as const).map(([value, id, label]) => `<button data-vehicle-mode="${value}" data-vehicle="${id}" aria-pressed="${mode === value}" ${disabled ? 'disabled' : ''}>${label}</button>`).join('')}</div>`;
+  ] as const).map(([value, id, label]) => `<button data-vehicle-mode="${value}" data-vehicle="${id}" aria-pressed="${mode === value}" ${disabled ? 'disabled' : ''}>${label}</button>`).join('')}${includeLongboard ? `<button data-vehicle-mode="longboard" data-action="mode-downhill" aria-pressed="${mode === 'longboard'}" ${disabled ? 'disabled' : ''}>长板速降</button>` : ''}</div>`;
+}
+
+export function difficultySetting(difficulty: Difficulty) {
+  return `<div class="setting-row"><div><strong>游戏难度</strong><small id="difficulty-description">${difficultyProfile(difficulty).description} · 下次发车生效</small></div><select id="difficulty-setting" aria-label="游戏难度" aria-describedby="difficulty-description">${DIFFICULTIES.map(profile => `<option value="${profile.id}" ${difficulty === profile.id ? 'selected' : ''}>${profile.name}</option>`).join('')}</select></div>`;
 }
 
 export class UI {
@@ -46,7 +53,7 @@ export class UI {
   private mapBounds = { minX: 0, maxZ: 0, width: 1, depth: 1 };
   private mapMarkers = new Map<string, { dot: SVGCircleElement; line: SVGLineElement }>();
   private phase = '';
-  private stageFilter: 'all' | 'outdoor' | 'indoor' | 'jumps' = 'all';
+  private stageFilter: 'all' | 'outdoor' | 'indoor' | 'jumps' | 'endurance' | 'circuit' | 'adventure' = 'all';
   private lastSplit = 0;
   private lastPenalty = 0;
   private nextLeaderboardUpdate = 0;
@@ -71,9 +78,9 @@ export class UI {
           <div class="eyebrow"><span class="tiny-line"></span> THE RALLY EXPERIENCE <span class="edition">VOL. 01</span></div>
           <h1>DUST &amp;<br><span>GLORY.</span><span class="title-period"></span></h1>
           <h2>越过尘土，驶向山野。</h2>
-          ${vehicleModePicker(VEHICLES.find(vehicle => vehicle.id === settings.vehicleId)?.mode ?? 'car')}
+          ${vehicleModePicker(settings.mode === 'downhill' ? 'longboard' : VEHICLES.find(vehicle => vehicle.id === settings.vehicleId)?.mode ?? 'car', false, true)}
           <p id="mode-description" class="hero-copy">与 5 位车手同场出发，争夺领先。<br>宽阔赛道，留下你的超车路线。</p>
-          <div class="mode-picker" role="group" aria-label="比赛模式"><button data-action="mode-classic" aria-pressed="true"><span>经典竞速</span><small>PURE RACING</small></button><button data-action="mode-items" aria-pressed="false"><span>✦ 道具赛</span><small>ITEM RUSH / 6 道具</small></button><button data-action="mode-downhill" aria-pressed="false"><span>长板速降</span><small>LONGBOARD / DOWNHILL</small></button></div>
+          <div class="mode-picker" role="group" aria-label="比赛模式"><button data-action="mode-classic" aria-pressed="true"><span>经典竞速</span><small>PURE RACING</small></button><button data-action="mode-items" aria-pressed="false"><span>✦ 道具赛</span><small>ITEM RUSH / 6 道具</small></button></div>
           <div class="start-row"><button id="start-button" class="primary-button" data-action="start"><span><span id="start-label">开始赛段</span> <small>START YOUR ENGINE</small></span>${icon('arrow')}</button><button class="help-button" data-action="controls"><span class="key-cap">?</span> 驾驶指南</button></div>
           <div class="selection-actions"><button data-action="stage">选择地图 <span id="selected-stage">${STAGES.length} 个赛段 ↗</span></button><button data-action="garage"><span id="vehicle-selection-label">选择车辆</span> <span id="selected-vehicle">${VEHICLES.length} 种车型 ↗</span></button></div>
         </section>
@@ -82,7 +89,7 @@ export class UI {
         <footer class="menu-footer"><span>BUILT FOR THE UNTAMED.</span><span>EST. 2026 <i> / </i> DUSTLINE RALLY CLUB</span></footer>
       </main>
       <section id="hud" class="hud hidden" aria-label="比赛仪表">
-        <div class="stage-clock"><span id="hud-stage" class="eyebrow"></span><div id="race-time">00:00.00</div><p>个人最佳 <strong id="best-time">—:——.——</strong></p></div>
+        <div class="stage-clock"><span id="hud-stage" class="eyebrow"></span><div id="race-time">00:00.00</div><p>个人最佳 <strong id="best-time">—:——.——</strong></p><p id="ghost-status" class="ghost-status">本场轨迹记录中</p></div>
         <aside class="race-order" aria-label="实时竞速名次"><span class="eyebrow">POSITION</span><div><strong id="race-rank">6</strong><span> / 6</span></div><ol id="race-leaderboard"></ol></aside>
         <aside id="item-panel" class="item-panel hidden" aria-label="道具栏">
           <button id="item-button" data-action="use-item" disabled aria-label="使用道具，快捷键 E" aria-describedby="item-description">
@@ -106,8 +113,8 @@ export class UI {
             <div class="longboard-stance-row"><strong id="longboard-stance">REGULAR</strong><span id="longboard-action">左脚在前</span></div>
           </div>
         </div>
-        <div class="driving-hint" id="driving-hint"><kbd>W</kbd> 油门 <kbd>S</kbd> 刹车 <kbd>A</kbd><kbd>D</kbd> 转向 <kbd>SPACE</kbd> <span data-brake-hint>漂移蓄能</span> <kbd>SHIFT</kbd> 氮气 <span id="item-key-hint" class="hidden"><kbd>E</kbd> 使用道具</span></div>
-        <div class="touch-controls"><div><button data-control="ArrowLeft" aria-label="左转">←</button><button data-control="ArrowRight" aria-label="右转">→</button></div><div><button data-control="Space" class="touch-handbrake" aria-label="手刹">手刹</button><button data-control="ArrowDown" aria-label="刹车">刹车</button><button data-control="ArrowUp" class="touch-throttle" aria-label="油门">油门</button></div></div>
+        <div class="driving-hint" id="driving-hint"><kbd>W</kbd> 油门 <kbd>S</kbd> 刹车 / 倒车 <kbd>A</kbd><kbd>D</kbd> 转向 <kbd>SPACE</kbd> <span data-brake-hint>漂移蓄能</span> <kbd>SHIFT</kbd> 氮气 <span id="item-key-hint" class="hidden"><kbd>E</kbd> 使用道具</span></div>
+        <div class="touch-controls"><div><button data-control="ArrowLeft" aria-label="左转">←</button><button data-control="ArrowRight" aria-label="右转">→</button></div><div><button data-control="Space" class="touch-handbrake" aria-label="手刹">手刹</button><button data-control="ArrowDown" aria-label="刹车或倒车">刹车 / 倒车</button><button data-control="ArrowUp" class="touch-throttle" aria-label="油门">油门</button></div></div>
       </section>
       <div id="countdown" class="countdown hidden" role="status"><span>READY TO GET DIRTY?</span><strong id="countdown-number">3</strong><p>六车同场 · 倒计时结束一起发车。</p></div>
       <div id="toast" class="toast hidden" role="status"></div>
@@ -143,7 +150,7 @@ export class UI {
     const minZ = Math.min(...p.map(v => v.z)); const maxZ = Math.max(...p.map(v => v.z));
     this.mapBounds = { minX, maxZ, width: Math.max(1, maxX - minX), depth: Math.max(1, maxZ - minZ) };
     this.mapPoints = p.map(point => this.mapPosition(point));
-    this.routePath = this.mapPoints.filter((_, i) => i % 6 === 0 || i === p.length - 1).map((point, i) => `${i === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+    this.routePath = this.mapPoints.filter((_, i) => i % 6 === 0 || i === p.length - 1).map((point, i) => `${i === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ') + (this.track.closed ? ' Z' : '');
   }
   private mapPosition(point: Pick<TrackPoint, 'x' | 'z'>) {
     const { minX, maxZ, width, depth } = this.mapBounds;
@@ -204,7 +211,7 @@ export class UI {
     document.querySelectorAll<HTMLButtonElement>('[data-vehicle-mode]').forEach(button => {
       const selected = button.dataset.vehicleMode === vehicle.mode;
       button.setAttribute('aria-pressed', String(selected));
-      if (selected) button.dataset.vehicle = vehicle.id;
+      if (selected && button.dataset.vehicle) button.dataset.vehicle = vehicle.id;
     });
     const rearBrake = vehicle.mode === 'motorcycle' ? '后刹' : '手刹';
     const brakeButton = document.querySelector<HTMLButtonElement>('.touch-handbrake')!;
@@ -267,6 +274,9 @@ export class UI {
     this.updateItems(race);
     if (race.phase === 'menu') return;
     this.set('race-time', formatTime(race.totalTime));
+    this.set('ghost-status', race.ghost.loading ? '正在载入最佳影子' : race.ghost.replay
+      ? race.elapsed > race.ghost.replay.duration ? '最佳影子已完赛' : '最佳影子 · 同步挑战' : '本场轨迹记录中');
+    this.get('ghost-status').classList.toggle('has-ghost', race.ghost.replay !== null);
     const standings = race.standings;
     this.set('race-rank', String(standings.findIndex(row => row.player) + 1));
     if (race.elapsed >= this.nextLeaderboardUpdate) {
@@ -274,9 +284,9 @@ export class UI {
       if (this.leaderboardHTML !== board) { this.get('race-leaderboard').innerHTML = board; this.leaderboardHTML = board; }
       this.nextLeaderboardUpdate = race.elapsed + 0.15;
     }
-    this.set('speed', Math.round(race.speed * 3.6).toString().padStart(3, '0'));
+    this.set('speed', Math.round(Math.abs(race.speed) * 3.6).toString().padStart(3, '0'));
     const gear = race.gear;
-    this.set('gear', gear === 0 ? 'N' : String(gear));
+    this.set('gear', gear === -1 ? 'R' : gear === 0 ? 'N' : String(gear));
     this.set('progress-label', `${Math.floor(race.progress * 100)}%`);
     this.get('progress-fill').style.width = `${race.progress * 100}%`;
     this.set('sector-label', `0${race.sector} / 05`);
@@ -290,6 +300,7 @@ export class UI {
     this.get('nitro-fill').style.transform = `scaleX(${race.nitro / 100})`;
     this.set('nitro-status', race.phase !== 'racing' ? '比赛开始后可用'
       : race.airborne ? '腾空中 · 落地后加速'
+      : race.speed < 0 ? '倒车中 · 前进后可加速'
       : race.boosting && race.mode === 'items' && race.items.player.boost > 0 ? '道具冲刺中 · 氮气可保留'
       : race.boosting ? '加速中 · 松开停止'
       : race.nitroCharging ? '漂移蓄能中 +'
@@ -299,6 +310,7 @@ export class UI {
     const sliding = race.driftIntensity > 0.2;
     this.set('drive-state', race.missedCheckpoint ? '漏过计时点 · R 救援'
       : race.airborne ? `腾空 ${race.vertical.airTime.toFixed(1)}s · 离地 ${race.airHeight.toFixed(1)}m`
+      : race.speed < -0.5 ? '倒车中 · W / ↑ 切回前进'
       : race.wrongWay ? '逆向行驶 · 调头或 R 救援'
       : Math.abs(race.lane) > this.track.roadWidth / 2 - roadMargin(race.vehicle) ? '驶离赛道 · R 救援'
       : race.mode === 'items' && race.items.player.stun > 0 ? '道具命中 · 正在恢复'
@@ -367,12 +379,19 @@ export class UI {
     const downhillContent = longboardDialog(type, race, formatTime);
     if (downhillContent) content = downhillContent;
     else if (type === 'settings') {
-      content = `<span class="eyebrow">MAKE IT YOURS</span><h2>驾驶偏好</h2><p class="dialog-intro">找到属于你的驾驶节奏。</p><div class="setting-row"><div><strong>画面质量</strong><small>轻量模式减少植被和像素密度</small></div><select id="quality-setting" aria-label="画面质量"><option value="standard" ${settings.quality === 'standard' ? 'selected' : ''}>标准</option><option value="low" ${settings.quality === 'low' ? 'selected' : ''}>轻量</option></select></div><div class="setting-row"><div><strong>驾驶难度</strong><small>专业模式抓地力更低，对手节奏更快 · 下次发车生效</small></div><select id="difficulty-setting" aria-label="驾驶难度"><option value="club" ${settings.difficulty === 'club' ? 'selected' : ''}>俱乐部</option><option value="pro" ${settings.difficulty === 'pro' ? 'selected' : ''}>专业</option></select></div>${this.toggle('autoThrottle', race.isLongboard ? '自动蹬地' : '自动油门', race.isLongboard ? '低速自动蹬地 · 脚刹和横板优先 · 下次发车生效' : '只需专注转向和刹车 · 下次发车生效')}${this.toggle('sound', race.isLongboard ? '风声与滑行音效' : '引擎与路面音效', race.isLongboard ? '感受山风与轮面摩擦' : '感受转速变化与砂石摩擦')}${this.toggle('voice', '领航员语音', '中文路书播报，语音可用性取决于浏览器')}<button class="primary-button dialog-primary" data-action="close">保存并返回 ${icon('arrow')}</button>`;
+      content = `<span class="eyebrow">MAKE IT YOURS</span><h2>驾驶偏好</h2><p class="dialog-intro">找到属于你的驾驶节奏。</p><div class="setting-row"><div><strong>画面质量</strong><small>轻量模式减少植被和像素密度</small></div><select id="quality-setting" aria-label="画面质量"><option value="standard" ${settings.quality === 'standard' ? 'selected' : ''}>标准</option><option value="low" ${settings.quality === 'low' ? 'selected' : ''}>轻量</option></select></div>${difficultySetting(settings.difficulty)}${this.toggle('autoThrottle', race.isLongboard ? '自动蹬地' : '自动油门', race.isLongboard ? '低速自动蹬地 · 脚刹和横板优先 · 下次发车生效' : '只需专注转向和刹车 · 下次发车生效')}${this.toggle('sound', race.isLongboard ? '风声与滑行音效' : '引擎与路面音效', race.isLongboard ? '感受山风与轮面摩擦' : '感受转速变化与砂石摩擦')}${this.toggle('voice', '领航员语音', '中文路书播报，语音可用性取决于浏览器')}<button class="primary-button dialog-primary" data-action="close">保存并返回 ${icon('arrow')}</button>`;
     } else if (type === 'controls') {
-      content = `<span class="eyebrow">DRIVER BRIEFING</span><h2>每一道弯，都有章法。</h2><p class="dialog-intro">松开油门入弯，找准路线，再全力出弯。</p><div class="controls-list"><div><span><kbd>W</kbd> / <kbd>↑</kbd></span><strong>踩下油门</strong></div><div><span><kbd>S</kbd> / <kbd>↓</kbd></span><strong>刹车减速</strong></div><div><span><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd></span><strong>控制车头方向 · 无自动转弯</strong></div><div><kbd>SPACE</kbd><strong>${race.vehicleMode === 'motorcycle' ? '按住后轮制动 · 转向滑胎蓄能' : '按住持续手刹 · 松开释放'}</strong></div><div><kbd>SHIFT</kbd><strong>按住氮气加速 · 漂移积攒氮气</strong></div><div><kbd>E</kbd><strong>道具赛：使用道具，也可点击道具栏</strong></div><div><kbd>C</kbd><strong>赛道追尾 / 低位视角</strong></div><div><kbd>R</kbd><strong>救援回赛道 · 罚时 5 秒</strong></div><div><kbd>ESC</kbd><strong>暂停 / 继续</strong></div></div><p class="driver-tip">摩托车模式使用 A / D 转向压弯，空格控制后轮制动；滑胎角度小于汽车，松开后刹恢复抓地。骑手随车身倾斜，镜头保持平稳。两种车辆模式都支持全部赛道及经典 / 道具赛，切换在主菜单进行。<br>与 5 辆 AI 对手同场竞速，名次按冲线顺序确定。AI 会减速入弯、跟车和寻找空位超车。<br>你的车辆不会自动跟随赛道转弯。按 A / D 渐进转向，松开后转向力度平滑归零。镜头沿前方道路取景，车头可以独立偏转。<br>空格按住越久，甩尾幅度越大；入漂后松开方向仍会侧滑，松开空格才回正。一直拉手刹会减速直至停车。<br>转向漂移会积攒氮气，侧滑越明显蓄能越快；停车或直线拉手刹不会蓄能。松开手刹后，按住 Shift 或右下角氮气按钮加速，松开停止消耗；满槽可持续约 4 秒。刹车和手刹优先。氮气期间极速提高 70 km/h（车辆完好时最高 320 km/h），松开后平滑回落；排气口会喷焰，视野拉宽并出现边缘速度线。<br>道具赛在主菜单切换，适用于全部赛道。驶过蓝色问号箱抽取一个道具，按 E 或点击左侧道具栏使用；青色箭头加速带自动触发。AI 同样拾取和使用道具，落后车手更容易获得冲刺、追踪飞盘和雷电。受击会短暂减速并获得保护；护盾抵挡一次攻击，重开清空所有道具。<br>新增起伏飞跃赛道：低速贴地过坡，加速迎坡自然腾空，无需跳跃键。起跳前摆正车头，腾空时保留惯性，落地后恢复转向和制动。黄色 JUMP 路牌与坡顶路书提前提示，仪表显示腾空时间和离地高度。<br>路书中的数字表示弯道速度等级：<b>2–3 为急弯，4–5 为快弯</b>。路肩会损伤车辆并降低极速，入弯前提前刹车。触屏设备使用屏幕底部按钮。</p><button class="primary-button dialog-primary" data-action="close">准备好了 ${icon('arrow')}</button>`;
+      content = `<span class="eyebrow">DRIVER BRIEFING</span><h2>每一道弯，都有章法。</h2><p class="dialog-intro">松开油门入弯，找准路线，再全力出弯。</p><div class="controls-list"><div><span><kbd>W</kbd> / <kbd>↑</kbd></span><strong>踩下油门</strong></div><div><span><kbd>S</kbd> / <kbd>↓</kbd></span><strong>刹车减速 · 停稳后继续按住倒车</strong></div><div><span><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd></span><strong>控制车头方向 · 无自动转弯</strong></div><div><kbd>SPACE</kbd><strong>${race.vehicleMode === 'motorcycle' ? '按住后轮制动 · 转向滑胎蓄能' : '按住持续手刹 · 松开释放'}</strong></div><div><kbd>SHIFT</kbd><strong>按住氮气加速 · 漂移积攒氮气</strong></div><div><kbd>E</kbd><strong>道具赛：使用道具，也可点击道具栏</strong></div><div><kbd>C</kbd><strong>赛道追尾 / 低位视角</strong></div><div><kbd>R</kbd><strong>救援回赛道 · 罚时 5 秒</strong></div><div><kbd>ESC</kbd><strong>暂停 / 继续</strong></div></div><p class="driver-tip">按住 S / ↓ 先刹车，停稳后继续按住即可倒车，倒车最高 30 km/h；按 W / ↑ 先停稳再前进。空格可在两个方向上制动至停车，自动油门也支持按住 S / ↓ 倒车。<br>摩托车模式使用 A / D 转向压弯，空格控制后轮制动；滑胎角度小于汽车，松开后刹恢复抓地。骑手随车身倾斜，镜头保持平稳。两种车辆模式都支持全部赛道及经典 / 道具赛，切换在主菜单进行。<br>与 5 辆 AI 对手同场竞速，名次按冲线顺序确定。AI 会提前减速入弯、平顺加减速并渐进换道；简单、中等、困难会调整对手速度、跟车距离与超车节奏。困难 AI 会走外线切弯心、漂移蓄氮，并在出弯回正后氮气冲刺；遇到前车、急弯、腾空或受击会收油避让。<br>你的车辆不会自动跟随赛道转弯。按 A / D 渐进转向，松开后转向力度平滑归零。镜头沿前方道路取景，车头可以独立偏转。<br>空格按住越久，甩尾幅度越大；入漂后松开方向仍会侧滑，松开空格才回正。一直拉手刹会减速直至停车。<br>转向漂移会积攒氮气，侧滑越明显蓄能越快；停车或直线拉手刹不会蓄能。松开手刹后，按住 Shift 或右下角氮气按钮加速，松开停止消耗；满槽可持续约 4 秒。刹车和手刹优先。氮气期间极速提高 70 km/h（车辆完好时最高 320 km/h），松开后平滑回落；排气口会喷焰，视野拉宽并出现边缘速度线。<br>道具赛在主菜单切换，适用于全部赛道。驶过蓝色问号箱抽取一个道具，按 E 或点击左侧道具栏使用；青色箭头加速带自动触发。AI 同样拾取和使用道具，落后车手更容易获得冲刺、追踪飞盘和雷电。受击会短暂减速并获得保护；护盾抵挡一次攻击，重开清空所有道具。<br>新增起伏飞跃赛道：低速贴地过坡，加速迎坡自然腾空，无需跳跃键。起跳前摆正车头，腾空时保留惯性，落地后恢复转向和制动。黄色 JUMP 路牌与坡顶路书提前提示，仪表显示腾空时间和离地高度。<br>路书中的数字表示弯道速度等级：<b>2–3 为急弯，4–5 为快弯</b>。路肩会损伤车辆并降低极速，入弯前提前刹车。触屏设备使用屏幕底部按钮。</p><button class="primary-button dialog-primary" data-action="close">准备好了 ${icon('arrow')}</button>`;
     } else if (type === 'stage') {
-      const filters = [['all', '全部赛道'], ['outdoor', '室外山野'], ['indoor', '室内场馆'], ['jumps', '起伏飞跃']] as const;
-      const matches = (stage: typeof STAGES[number], filter = this.stageFilter) => filter === 'all' || (filter === 'jumps' ? Boolean(stage.jumps?.length) : Boolean(stage.venue) === (filter === 'indoor'));
+      const filters = [['all', '全部赛道'], ['adventure', '趣味挑战'], ['endurance', '长途多弯'], ['circuit', '闭环赛道'], ['outdoor', '室外山野'], ['indoor', '室内场馆'], ['jumps', '起伏飞跃']] as const;
+      const matches = (stage: typeof STAGES[number], filter = this.stageFilter) => {
+        if (filter === 'all') return true;
+        if (filter === 'adventure') return ADVENTURE_STAGES.includes(stage);
+        if (filter === 'endurance') return ENDURANCE_STAGES.includes(stage) || ADVENTURE_STAGES.includes(stage);
+        if (filter === 'circuit') return Boolean(stage.closed);
+        if (filter === 'jumps') return Boolean(stage.jumps?.length);
+        return Boolean(stage.venue) === (filter === 'indoor');
+      };
       content = `<span class="eyebrow">CHOOSE YOUR STAGE / ${String(STAGES.length).padStart(2, '0')} ROUTES</span><h2>下一站，驶向哪里。</h2><p class="dialog-intro">${race.phase === 'menu' ? '从室外山野到封闭场馆。选择赛段后返回发车区，准备六车同场竞速。' : '当前比赛已暂停；返回主菜单后可切换地图。'}</p><div class="stage-filters" role="group" aria-label="赛道类型">${filters.map(([id, label]) => `<button data-stage-filter="${id}" aria-pressed="${this.stageFilter === id}">${label}<span>${STAGES.filter(stage => matches(stage, id)).length}</span></button>`).join('')}</div><div class="catalog-grid">${STAGES.filter(stage => matches(stage)).map(stage => {
         const track = new Track(stage);
         const route = routeThumbnail(track) + stageElevation(track);
@@ -381,7 +400,7 @@ export class UI {
         return `<button class="catalog-card ${selected ? 'selected' : ''}" data-stage="${stage.id}" ${race.phase !== 'menu' ? 'disabled' : ''} aria-pressed="${selected}" style="--terrain:${stage.theme.ground};--route:${stage.theme.road}"><span class="catalog-top"><span>SS ${stage.number} / ${stage.english}</span><b>${stage.level}</b></span>${route}<strong>${stage.name}</strong><span class="catalog-description">${stage.description}</span><span class="catalog-specs">${(track.length / 1000).toFixed(2)} KM · ${stage.roadWidth} 米路宽 · ${stage.surface}</span><span class="catalog-record">${stage.weather} · 金牌 ${formatTime(track.length / stage.goldSpeed)}</span><span class="catalog-record">当前车型最佳 ${formatTime(best)}</span><span class="catalog-choice">${selected ? '已选择 ✓' : '选择此赛段 →'}</span></button>`;
       }).join('')}</div><p class="driver-tip">成绩按比赛模式、地图、车型、驾驶难度和油门模式分别保存。</p><button class="secondary-button dialog-primary" data-action="close">返回发车区</button>`;
     } else if (type === 'garage') {
-      content = `<span class="eyebrow">SERVICE PARK / ${String(VEHICLES.length).padStart(2, '0')} MACHINES</span><h2>选一台，合拍的车。</h2><p class="dialog-intro">${race.phase === 'menu' ? '四款汽车、两款摩托。选择车辆即切换驾驶模式，AI 对手同步换车。' : '当前比赛已暂停；返回主菜单后可更换车辆。'}</p>${vehicleModePicker(race.vehicleMode, race.phase !== 'menu')}<div class="catalog-grid">${VEHICLES.filter(vehicle => vehicle.mode === race.vehicleMode).map(vehicle => {
+      content = `<span class="eyebrow">SERVICE PARK / ${String(VEHICLES.length).padStart(2, '0')} MACHINES</span><h2>选一台，合拍的车。</h2><p class="dialog-intro">${race.phase === 'menu' ? `${VEHICLES.filter(vehicle => vehicle.mode === 'car').length} 款汽车、${VEHICLES.filter(vehicle => vehicle.mode === 'motorcycle').length} 款摩托。选择车辆即切换驾驶模式，AI 对手同步换车。` : '当前比赛已暂停；返回主菜单后可更换车辆。'}</p>${vehicleModePicker(race.vehicleMode, race.phase !== 'menu')}<div class="catalog-grid">${VEHICLES.filter(vehicle => vehicle.mode === race.vehicleMode).map(vehicle => {
         const selected = vehicle.id === race.vehicleId;
         return `<button class="catalog-card vehicle-card ${selected ? 'selected' : ''}" data-vehicle="${vehicle.id}" ${race.phase !== 'menu' ? 'disabled' : ''} aria-pressed="${selected}"><span class="catalog-top"><span>${vehicle.type}</span><b>${vehicle.drive}</b></span>${vehicleThumbnail(vehicle)}<strong>${vehicle.name}</strong><span class="catalog-description">${vehicle.description}</span><span class="catalog-specs">${vehicle.topSpeed} KM/H · ${vehicle.power} HP · ${vehicle.weight} KG</span><span class="vehicle-ratings">${[['加速', vehicle.acceleration / 18], ['抓地', vehicle.grip / 1.3], ['耐损', vehicle.durability / 1.8]].map(([name, value]) => `<span>${name}<i><em style="width:${Math.min(1, Number(value)) * 100}%"></em></i></span>`).join('')}</span><span class="catalog-choice">${selected ? '已选择 ✓' : '驾驶这台车 →'}</span></button>`;
       }).join('')}</div><p class="driver-tip">汽车使用空格手刹，摩托使用空格后刹；转向滑胎可积攒氮气。运动摩托加速更快，越野摩托更适应路肩。成绩按车型独立保存。</p><button class="secondary-button dialog-primary" data-action="close">返回发车区</button>`;
@@ -401,7 +420,10 @@ export class UI {
     }));
     this.dialog.querySelectorAll('select').forEach(select => select.addEventListener('change', () => {
       if (select.id === 'quality-setting') settings.quality = select.value === 'low' ? 'low' : 'standard';
-      if (select.id === 'difficulty-setting') settings.difficulty = select.value === 'pro' ? 'pro' : 'club';
+      if (select.id === 'difficulty-setting') {
+        settings.difficulty = parseDifficulty(select.value);
+        this.dialog.querySelector('#difficulty-description')!.textContent = `${difficultyProfile(settings.difficulty).description} · 下次发车生效`;
+      }
       saveSettings(); this.onSetting();
     }));
     this.dialog.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach(input => input.addEventListener('change', () => {

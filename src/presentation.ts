@@ -21,13 +21,14 @@ export function capturePose(race: Race): VehiclePose {
     distance: race.distance, roadHeading: roadViewHeading(race.track, race.distance), cameraHeight: race.position.y,
     pitch: race.pitch, airHeight: race.airHeight, airborne: race.airborne, longboardPose: { ...race.longboardPose },
     rivals: race.opponents.cars.map(car => ({ position: { ...car.position }, heading: car.heading, speed: car.speed,
-      steering: car.steering, pitch: car.pitch, airHeight: car.airHeight, airborne: car.airborne })) };
+      steering: car.steering, pitch: car.pitch, airHeight: car.airHeight, airborne: car.airborne,
+      driftAngle: car.driftAngle, drifting: car.drifting, boosting: car.boosting })) };
 }
 function copyRivals(target: RivalPose[], source: RivalPose[]) {
   source.forEach((car, i) => {
     Object.assign(target[i].position, car.position);
-    for (const key of ['heading', 'speed', 'steering', 'pitch', 'airHeight'] as const) target[i][key] = car[key];
-    target[i].airborne = car.airborne;
+    for (const key of ['heading', 'speed', 'steering', 'pitch', 'airHeight', 'driftAngle'] as const) target[i][key] = car[key];
+    for (const key of ['airborne', 'drifting', 'boosting'] as const) target[i][key] = car[key];
   });
 }
 function copy(target: VehiclePose, source: VehicleMotion) {
@@ -115,6 +116,8 @@ export class RaceTimeline {
       car.steering = before.steering + (after.steering - before.steering) * alpha;
       car.pitch = before.pitch + (after.pitch - before.pitch) * alpha;
       car.airHeight = before.airHeight + (after.airHeight - before.airHeight) * alpha;
+      car.driftAngle = before.driftAngle + (after.driftAngle - before.driftAngle) * alpha;
+      car.drifting = after.drifting; car.boosting = after.boosting;
       car.airborne = before.airborne || after.airborne;
     });
   }

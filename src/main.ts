@@ -15,7 +15,8 @@ import { RaceTimeline, PaintClock } from './presentation';
 import type { RallyRenderer } from './render/renderer';
 import { RallyAudio } from './audio';
 import { Input } from './input';
-import { saveRecord, saveSettings, settings } from './settings';
+import { saveSettings, settings } from './settings';
+import { ghostRecords } from './ghost-records';
 import { UI } from './ui/ui';
 import { getVehicle } from './content/vehicles';
 import { raceSelection } from './content/modes';
@@ -71,6 +72,12 @@ function start() {
   race.difficulty = settings.difficulty; race.autoThrottle = settings.autoThrottle;
   race.mode = settings.mode;
   race.start(); timeline.reset(); view.reset(); lastFrame = performance.now();
+  const startingRace = race; const startingGeneration = generation;
+  race.ghost.loading = true;
+  void ghostRecords.load(startingRace).then(runs => {
+    if (generation !== startingGeneration || race !== startingRace) return;
+    startingRace.ghost.setReplays(runs); dirty = true;
+  });
   wasPausedForDialog = false; dirty = true;
 }
 function home() {
@@ -129,8 +136,10 @@ ui.onSelect = (kind, id) => {
   if (race.phase !== 'menu' || !view?.contextAvailable) return;
   const garageModeSwitch = kind === 'vehicle' && getVehicle(id).mode !== race.vehicleMode
     && ui.dialog?.open && ui.dialog.dataset.page === 'garage';
+  const leavingDownhill = race.isLongboard && kind === 'vehicle' && getVehicle(id).mode !== 'longboard';
+  if (leavingDownhill) settings.mode = 'classic';
   const { stage, vehicle } = raceSelection(settings.mode,
-    kind === 'stage' ? id : race.stageId, kind === 'vehicle' ? id : race.vehicleId);
+    kind === 'stage' ? id : leavingDownhill ? settings.stageId : race.stageId, kind === 'vehicle' ? id : race.vehicleId);
   const stageChanged = stage.id !== race.stageId;
   input.clear(); audio.reset();
   if (stageChanged) track = new Track(stage);
@@ -188,9 +197,7 @@ window.addEventListener('pageshow', event => {
   if (event.persisted) { lastFrame = performance.now(); dirty = true; animationFrame = requestAnimationFrame(frame); }
 });
 
-function recordResult() {
-  // Records follow the active run, even if next-run preferences were edited while paused.
-  const newRecord = saveRecord(race.totalTime, race);
+function recordResult(newRecord: boolean) {
   ui.openDialog('results', race, newRecord);
 }
 
@@ -208,7 +215,14 @@ function frame(now: number) {
     const previous = race.phase;
     timeline.advance(dt, controls);
     if (previous !== 'finished' && (race.phase as string) === 'finished') {
-      input.clear(); audio.silence(); recordResult(); dirty = true;
+      input.clear(); audio.silence();
+      // Save immediately, even if the player restarts before the result dialog opens.
+      const newRecord = ghostRecords.save(race);
+      const finishGeneration = generation;
+      window.setTimeout(() => {
+        if (generation === finishGeneration && race.phase === 'finished') recordResult(newRecord);
+      }, 3000);
+      dirty = true;
     }
     if (previous === 'countdown' && (race.phase as string) === 'racing') ui.toast(race.isLongboard ? '出发！W 蹬地，Shift 收身，S 脚刹，空格扶地刹滑，X 站滑，Q 切换站姿。' : race.autoThrottle ? '出发！自动油门已开启，专注转向与刹车。' : '出发！按 W / ↑ 踩下油门。');
   }

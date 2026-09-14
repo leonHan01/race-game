@@ -22,8 +22,8 @@ function takeOff(race: Race) {
   assert.ok(race.airborne, `${race.stageId}/${race.vehicleId} never left the ramp`);
 }
 
-test('three new outdoor stages have complete, smooth crests and safe runouts before the finish', () => {
-  assert.deepEqual(jumpStages.map(stage => stage.id), ['meadow', 'quarry', 'skyline']);
+test('jump stages have complete, smooth crests and safe runouts before the finish', () => {
+  assert.deepEqual(jumpStages.map(stage => stage.id), ['meadow', 'quarry', 'skyline', 'highland-crest', 'triple-jump-ring']);
   for (const stage of jumpStages) {
     const track = new Track(stage); const base = new Track({ ...stage, jumps: [] });
     assert.ok(!stage.venue && track.length > 2000 && track.notes.length >= 2);
@@ -152,7 +152,8 @@ test('airborne pause, rescue and restart keep the shared simulation and interpol
 test('all five rivals jump and finish each new stage with cars and motorcycles', () => {
   for (const stage of jumpStages) for (const vehicle of [VEHICLES[1], VEHICLES.find(v => v.mode === 'motorcycle')!]) {
     const race = new Race(new Track(stage), vehicle); race.phase = 'racing'; race.placeOnTrack(-1000, 50);
-    for (let i = 0; i < 180 * 60 && race.opponents.cars.some(car => car.finishTime === null); i++) race.update(STEP, idleControls());
+    const timeLimit = Math.max(180, race.targetTime * 1.5);
+    for (let i = 0; i < timeLimit / STEP && race.opponents.cars.some(car => car.finishTime === null); i++) race.update(STEP, idleControls());
     for (const car of race.opponents.cars) {
       assert.ok(car.vertical.jumpCount >= stage.jumps!.length, `${stage.id}/${car.id}: missed crests`);
       assert.ok(car.finishTime !== null, `${stage.id}/${car.id}: did not finish`);
