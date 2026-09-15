@@ -5,13 +5,17 @@ import { Race, idleControls } from '../src/simulation/race.ts';
 import { Track } from '../src/simulation/track.ts';
 import { getStage } from '../src/content/stages.ts';
 import { getVehicle, LONGBOARD } from '../src/content/vehicles.ts';
-import { MAX_GHOST_FRAMES, validGhost } from '../src/simulation/ghost.ts';
+import { MAX_GHOST_FRAMES, validGhost, rankGhosts } from '../src/simulation/ghost.ts';
 import { RaceTimeline } from '../src/presentation.ts';
-import { GhostVehicle } from '../src/render/ghost.ts';
+import { GhostFleet, GhostVehicle } from '../src/render/ghost.ts';
 import { disposeObject } from '../src/render/dispose.ts';
 import { GhostRecords, type GhostStorage } from '../src/ghost-records.ts';
 import { bestTime, recordKey } from '../src/settings.ts';
 import type { GhostRun } from '../src/simulation/ghost.ts';
+import { GHOST_COLORS, MAX_GHOSTS } from '../src/content/ghosts.ts';
+import { ghostLegend } from '../src/ui/ui.ts';
+import { CAR_EXHAUST_PORTS } from '../src/render/vehicle-model.ts';
+import { motorcycleExhaustPort } from '../src/render/motorcycle.ts';
 
 // CPU-only fixtures. No browser, server, canvas or WebGL context is started.
 const shortTrack = () => new Track({ ...getStage('pine'), points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -120 }] });
@@ -28,7 +32,7 @@ function finishRun(race: Race, duration = 4, penalty = 0) {
 
 test('a real fixed-step finish records the full route and exact finish crossing', () => {
   const race = new Race(shortTrack()); race.start();
-  assert.equal(race.ghost.replay, null); assert.equal(race.ghost.finish(race), null);
+  assert.deepEqual(race.ghost.replays, []); assert.equal(race.ghost.finish(race), null);
   for (const car of race.opponents.cars) car.finishTime = 0;
   for (let step = 0; step < 3000 && race.phase !== 'finished'; step++) race.update(1 / 60, { ...idleControls(), throttle: true });
   assert.equal(race.phase, 'finished');
@@ -46,7 +50,7 @@ test('playback interpolates world position and takes the short path across wrapp
   run.frames[1].yaw = Math.PI * 179 / 180; run.frames[2].yaw = -Math.PI * 179 / 180;
   run.frames[1].position.y = 2; run.frames[2].position.y = 4;
   run.frames[1].airborne = true; run.frames[2].airborne = true;
-  race.ghost.setReplay(run);
+  race.ghost.setReplays([run]);
   const pose = race.ghost.sample(1.5)!;
   assert.ok(Math.abs(Math.abs(pose.yaw) - Math.PI) < 1e-9);
   assert.equal(pose.position.y, 3); assert.equal(pose.position.z, -45); assert.equal(pose.airborne, true);
@@ -57,7 +61,7 @@ test('playback interpolates world position and takes the short path across wrapp
 
 test('countdown and pause freeze the race clock; restart drops the aborted recording', () => {
   const race = new Race(shortTrack()); const run = finishRun(race);
-  race.start(); race.ghost.setReplay(run);
+  race.start(); race.ghost.setReplays([run]);
   const timeline = new RaceTimeline(race);
   timeline.advance(0.1, idleControls());
   assert.equal(race.ghost.sample(timeline.pose.elapsed)!.time, 0);
@@ -69,7 +73,7 @@ test('countdown and pause freeze the race clock; restart drops the aborted recor
   race.pause(); const pausedElapsed = timeline.pose.elapsed;
   timeline.advance(0.1, idleControls()); assert.equal(timeline.pose.elapsed, pausedElapsed);
   assert.equal(race.ghost.finish(race), null);
-  race.start(); timeline.reset(); race.ghost.setReplay(run);
+  race.start(); timeline.reset(); race.ghost.setReplays([run]);
   assert.equal(race.ghost.sample(timeline.pose.elapsed)!.time, 0);
   assert.equal(race.elapsed, 0); assert.equal(race.ghost.finish(race), null);
 });
@@ -83,7 +87,7 @@ test('rescue replays snap at the recorded instant and penalties only select the 
   race.elapsed = 3; race.placeOnTrack(race.track.length); race.phase = 'finished'; race.ghost.record(race);
   const run = race.ghost.finish(race)!;
   assert.equal(run.duration, 3); assert.equal(run.totalTime, 8);
-  race.ghost.setReplay(run);
+  race.ghost.setReplays([run]);
   assert.ok(Math.abs(race.ghost.sample(1.5 - 1e-6)!.position.x - beforeRescue.x) < 0.001);
   assert.deepEqual(race.ghost.sample(1.5)!.position, rescued);
   assert.ok(validGhost(run, race, 8));
@@ -95,7 +99,7 @@ test('longboard pose samples are independent snapshots and replay stance transit
   run.frames[1].longboardPose!.tuck = 0; run.frames[2].longboardPose!.tuck = 1;
   race.longboard.pose.tuck = 0.9;
   assert.equal(run.frames[2].longboardPose!.tuck, 1);
-  race.ghost.setReplay(run);
+  race.ghost.setReplays([run]);
   assert.equal(race.ghost.sample(1.5)!.longboardPose!.stanceYaw, Math.PI / 2);
   assert.equal(race.ghost.sample(1.5)!.longboardPose!.tuck, 0.5);
 });
@@ -104,6 +108,7 @@ test('endurance recordings stay bounded while preserving the start, finish and r
   const race = new Race(shortTrack()); race.start(); race.phase = 'racing';
   for (let i = 1; i <= 40000; i++) {
     race.elapsed = i / 20; race.distance = race.track.length * i / 40000;
+    race.boosting = i === 1000;
     race.ghost.record(race);
     if (i === 19999) { race.position.x = 150; race.recover(); }
   }
@@ -115,12 +120,13 @@ test('endurance recordings stay bounded while preserving the start, finish and r
   const cut = run.frames.findIndex(frame => frame.cut);
   assert.ok(cut > 0); assert.equal(run.frames[cut - 1].position.x, 150);
   assert.equal(run.frames[cut].time, run.frames[cut - 1].time);
+  assert.ok(run.frames.some(frame => frame.boosting), 'downsampling retains short boost events');
 });
 
 test('car, bike and board ghosts use translucent isolated materials and follow recorded poses', () => {
   for (const vehicle of [getVehicle('falcon'), getVehicle('apex'), LONGBOARD]) {
     const race = new Race(shortTrack(), vehicle); const run = finishRun(race);
-    race.start(); race.phase = 'racing'; race.ghost.setReplay(run);
+    race.start(); race.phase = 'racing'; race.ghost.setReplays([run]);
     const view = new GhostVehicle(vehicle);
     try {
       view.update(race, 1.5, race.position);
@@ -151,22 +157,28 @@ function localScores(t: TestContext) {
   return scores;
 }
 class MemoryGhostStorage implements GhostStorage {
-  readonly values = new Map<string, GhostRun>();
+  readonly values = new Map<string, GhostRun[] | GhostRun>();
   async load(key: string) { return structuredClone(this.values.get(key)); }
-  async save(key: string, run: GhostRun) { this.values.set(key, structuredClone(run)); }
+  async save(key: string, run: GhostRun) {
+    const value = this.values.get(key);
+    const retained = rankGhosts([...(Array.isArray(value) ? value : value ? [value] : []), run]);
+    this.values.set(key, structuredClone(retained)); return retained;
+  }
 }
 
-test('only completed personal bests replace the ghost, using total time including penalties', async t => {
+test('all finishes compete for the five fastest total times, including penalties and non-PBs', async t => {
   localScores(t); const records = new GhostRecords(new MemoryGhostStorage()); const race = new Race(shortTrack());
-  assert.equal(await records.load(race), null);
+  assert.deepEqual(await records.load(race), []);
   finishRun(race, 4); assert.equal(records.save(race), true);
-  assert.equal(bestTime(race), 4); assert.equal((await records.load(race))!.duration, 4);
+  assert.equal(bestTime(race), 4); assert.equal((await records.load(race))[0].duration, 4);
   finishRun(race, 3, 5); assert.equal(records.save(race), false);
-  assert.equal((await records.load(race))!.duration, 4, 'a quicker drive with rescue penalties is not a PB');
+  assert.deepEqual((await records.load(race)).map(run => run.totalTime), [4, 8]);
   finishRun(race, 2); assert.equal(records.save(race), true);
-  assert.equal((await records.load(race))!.duration, 2);
+  for (const duration of [7, 6, 5, 9]) { finishRun(race, duration); assert.equal(records.save(race), false); }
+  assert.deepEqual((await records.load(race)).map(run => run.totalTime), [2, 4, 5, 6, 7]);
   race.start(); race.elapsed = 1; assert.equal(records.save(race), false);
-  assert.equal((await records.load(race))!.duration, 2, 'aborted attempts must preserve the PB');
+  assert.deepEqual((await records.load(race)).map(run => run.totalTime), [2, 4, 5, 6, 7], 'aborted attempts preserve history');
+  assert.equal(bestTime(race), 2);
 });
 
 test('persisted ghosts remain isolated by stage, vehicle, difficulty, throttle and race mode', async t => {
@@ -179,28 +191,28 @@ test('persisted ghosts remain isolated by stage, vehicle, difficulty, throttle a
   await new Promise(resolve => setImmediate(resolve));
   const reloaded = new GhostRecords(storage);
   for (let i = 0; i < races.length; i++) {
-    const ghost = await reloaded.load(races[i]); assert.ok(ghost);
+    const [ghost] = await reloaded.load(races[i]); assert.ok(ghost);
     assert.equal(ghost.totalTime, i + 2); assert.equal(ghost.vehicleId, races[i].vehicleId);
   }
   assert.equal(storage.values.size, races.length);
 });
 
-test('legacy times are preserved until matched or beaten, and malformed or stale ghosts are ignored', async t => {
+test('legacy scores remain unchanged while new trajectories accumulate; invalid and stale runs are ignored', async t => {
   const scores = localScores(t); const storage = new MemoryGhostStorage(); const records = new GhostRecords(storage);
   const race = new Race(shortTrack()); scores.set('dustline-best-v2-club-manual', '4');
-  assert.equal(await records.load(race), null);
-  finishRun(race, 5); assert.equal(records.save(race), false); assert.equal(await records.load(race), null);
+  assert.deepEqual(await records.load(race), []);
+  finishRun(race, 5); assert.equal(records.save(race), false); assert.equal((await records.load(race))[0].duration, 5);
   const run = finishRun(race, 4); assert.equal(records.save(race), false);
-  assert.equal((await records.load(race))!.duration, 4);
+  assert.deepEqual((await records.load(race)).map(run => run.duration), [4, 5]);
   const changed = new Race(new Track({ ...race.track.definition, roadWidth: race.track.roadWidth + 1 }));
-  assert.equal(await records.load(changed), null);
-  const corrupt: unknown[] = [null, {}, { ...run, version: 99 }, { ...run, totalTime: 5 },
+  assert.deepEqual(await records.load(changed), []);
+  const corrupt: unknown[] = [null, {}, { ...run, version: 99 }, { ...run, totalTime: NaN }, { ...run, id: 7 },
     { ...run, vehicleId: 'apex' }, { ...run, frames: run.frames.slice(0, -1) },
     { ...run, frames: [run.frames[1], run.frames[0], ...run.frames.slice(2)] },
     { ...run, frames: [{ ...run.frames[0], position: { x: NaN, y: 0, z: 0 } }, ...run.frames.slice(1)] }];
   for (const value of corrupt) {
     const invalid = new GhostRecords({ load: async () => value, save: async () => {} });
-    assert.equal(await invalid.load(race), null);
+    assert.deepEqual(await invalid.load(race), []);
   }
   assert.equal(scores.get('dustline-best-v2-club-manual'), '4');
 });
@@ -209,13 +221,147 @@ test('storage failures keep the session best available and late reads cannot rep
   localScores(t); const race = new Race(shortTrack());
   const broken = new GhostRecords({ load: async () => { throw new Error('disabled'); }, save: async () => { throw new Error('quota'); } });
   finishRun(race, 4); broken.save(race);
-  assert.equal((await broken.load(race))!.duration, 4);
+  assert.equal((await broken.load(race))[0].duration, 4);
   finishRun(race, 5); assert.equal(broken.save(race), false);
-  assert.equal((await broken.load(race))!.duration, 4);
+  assert.deepEqual((await broken.load(race)).map(run => run.duration), [4, 5]);
   const old = finishRun(race, 4); let resolveRead!: (run: GhostRun) => void;
   const records = new GhostRecords({ load: () => new Promise(resolve => { resolveRead = resolve; }), save: async () => {} });
   const pending = records.load(race);
   finishRun(race, 2); records.save(race); resolveRead(old);
-  assert.equal((await pending)!.duration, 2);
+  assert.deepEqual((await pending).map(run => run.duration), [2, 4]);
   assert.equal(bestTime(race), 2); assert.ok(recordKey(race).includes(race.vehicleId));
+});
+
+test('matching scores from separate races survive, but saving the same finish cannot duplicate it', async t => {
+  localScores(t); const records = new GhostRecords(new MemoryGhostStorage()); const race = new Race(shortTrack());
+  const first = finishRun(race, 4); records.save(race); records.save(race);
+  assert.equal(race.ghost.finish(race)!.id, first.id);
+  assert.equal((await records.load(race)).length, 1);
+  const second = finishRun(race, 4); records.save(race);
+  assert.notEqual(first.id, second.id);
+  const history = await records.load(race);
+  assert.equal(history.length, 2); assert.deepEqual(history.map(run => run.totalTime), [4, 4]);
+});
+
+test('single-ghost saves migrate into history, including a finish saved before the first read completes', async t => {
+  const scores = localScores(t); const storage = new MemoryGhostStorage(); const race = new Race(shortTrack());
+  const legacy = finishRun(race, 4); legacy.version = 1; delete legacy.id;
+  legacy.frames.forEach(frame => { delete frame.boosting; });
+  storage.values.set(recordKey(race), legacy); scores.set(recordKey(race), '4');
+  const records = new GhostRecords(storage);
+  finishRun(race, 5); assert.equal(records.save(race), false);
+  await new Promise(resolve => setImmediate(resolve));
+  const reloaded = new GhostRecords(storage);
+  const runs = await reloaded.load(race);
+  assert.deepEqual(runs.map(run => run.duration), [4, 5]);
+  assert.equal(runs[0].version, 1); assert.equal(runs[1].version, 2);
+  race.ghost.setReplays(runs);
+  assert.equal(race.ghost.sample(1)!.boosting, false, 'legacy boost state is unknown and must not be invented');
+  for (const duration of [6, 7, 8, 9, 3]) { finishRun(race, duration); reloaded.save(race); }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual((await new GhostRecords(storage).load(race)).map(run => run.duration), [3, 4, 5, 6, 7]);
+});
+
+test('delayed persistence keeps the completed race category after next-race settings change', async t => {
+  localScores(t); const storage = new MemoryGhostStorage(); const records = new GhostRecords(storage); const race = new Race(shortTrack());
+  const key = recordKey(race); finishRun(race, 4); records.save(race);
+  race.start(); race.difficulty = 'hard'; race.autoThrottle = true; race.mode = 'items';
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(storage.values.has(key), true); assert.equal(storage.values.has(recordKey(race)), false);
+  assert.deepEqual(await records.load(race), []);
+});
+
+test('five replays retain independent interpolated poses and finish at their own times', () => {
+  const race = new Race(shortTrack()); const runs = [8, 6, 4, 7, 5, 9].map(duration => finishRun(race, duration));
+  race.start(); race.ghost.setReplays(runs);
+  assert.deepEqual(race.ghost.replays.map(run => run.duration), [4, 5, 6, 7, 8]);
+  const poses = race.ghost.replays.map((run, index) => {
+    const pose = race.ghost.sample(1, index)!;
+    assert.ok(Math.abs(pose.position.z + 120 / run.duration) < 1e-8); return pose;
+  });
+  assert.equal(new Set(poses).size, MAX_GHOSTS);
+  assert.equal(poses[0].position.z, -30, 'sampling later ghosts does not mutate the fastest pose');
+  assert.equal(race.ghost.sample(4.1, 0), null); assert.ok(race.ghost.sample(4.1, 1));
+  assert.equal(race.ghost.sample(9, 4), null);
+  race.start(); assert.deepEqual(race.ghost.replays, []);
+  race.ghost.setReplays(runs);
+  for (let i = 0; i < MAX_GHOSTS; i++) assert.equal(race.ghost.sample(0, i)!.time, 0);
+});
+
+test('a one-tick nitro pulse is recorded even between regular samples and replays only during that interval', () => {
+  const race = new Race(shortTrack()); race.start(); race.phase = 'racing'; race.speed = 20; race.nitro = 10;
+  for (const car of race.opponents.cars) car.finishTime = 0;
+  const step = 1 / 60;
+  race.update(step, { ...idleControls(), throttle: true, nitro: true });
+  race.update(step, { ...idleControls(), throttle: true });
+  for (let i = 0; i < 1200 && race.phase !== 'finished'; i++) race.update(step, { ...idleControls(), throttle: true });
+  const run = race.ghost.finish(race)!; assert.ok(run);
+  assert.ok(run.frames.some(frame => frame.time === step && frame.boosting));
+  race.ghost.setReplays([run]);
+  assert.equal(race.ghost.sample(step * 0.9)!.boosting, false);
+  assert.equal(race.ghost.sample(step * 1.5)!.boosting, true);
+  assert.equal(race.ghost.sample(step * 2)!.boosting, false);
+});
+
+function flameMaterials(root: THREE.Object3D) {
+  const materials = new Set<THREE.ShaderMaterial>();
+  root.traverse(object => { if (object instanceof THREE.Mesh && object.material instanceof THREE.ShaderMaterial) materials.add(object.material); });
+  return [...materials];
+}
+
+test('five coloured ghosts replay their own jets, freeze on pause and release excess models on a new start', () => {
+  const race = new Race(shortTrack()); const runs = [4, 5, 6, 7, 8].map(duration => {
+    const run = finishRun(race, duration); run.frames.forEach(frame => { frame.boosting = true; }); return run;
+  });
+  race.start(); race.ghost.setReplays(runs); const fleet = new GhostFleet(race.vehicle);
+  try {
+    fleet.update(race, 0, race.position);
+    assert.equal(fleet.group.children.length, MAX_GHOSTS);
+    assert.equal(flameMaterials(fleet.group).length, 0, 'countdown does not allocate idle jets');
+    race.phase = 'racing'; race.boosting = false;
+    for (let i = 1; i <= 60; i++) fleet.update(race, i / 60, race.position);
+    const legend = ghostLegend(race.ghost.replays, 0);
+    for (const [index, model] of fleet.group.children.entries()) {
+      const jets = model.getObjectByName('nitro-exhaust-flames')!; assert.ok(jets?.visible);
+      jets.children.forEach((jet, i) => assert.deepEqual(jet.position.toArray(), CAR_EXHAUST_PORTS[i]));
+      const color = new THREE.Color(GHOST_COLORS[index]);
+      assert.ok(flameMaterials(model)[0].uniforms.base.value.equals(color));
+      model.traverse(object => { if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshBasicMaterial) assert.ok(object.material.color.equals(color)); });
+      assert.ok(legend.includes(`color:${GHOST_COLORS[index]}`)); assert.ok(legend.includes(`历史第 ${index + 1} 名`));
+    }
+    const clocks = flameMaterials(fleet.group).map(material => material.uniforms.time.value);
+    race.pause(); for (let i = 0; i < 10; i++) fleet.update(race, 1, race.position);
+    assert.deepEqual(flameMaterials(fleet.group).map(material => material.uniforms.time.value), clocks);
+    assert.ok(fleet.group.children.every(model => model.getObjectByName('nitro-exhaust-flames')!.visible));
+    race.resume(); fleet.update(race, 1.1, race.position);
+    assert.ok(flameMaterials(fleet.group)[0].uniforms.time.value > clocks[0]);
+    fleet.update(race, 1.2, { x: 1000, y: 0, z: 0 });
+    assert.ok(fleet.group.children.every(model => !model.visible && !model.getObjectByName('nitro-exhaust-flames')!.visible));
+    let released = 0;
+    for (const model of fleet.group.children.slice(1)) flameMaterials(model)[0].addEventListener('dispose', () => released++);
+    race.start(); race.ghost.setReplays([runs[0]]); fleet.reset(); fleet.update(race, 0, race.position);
+    assert.equal(fleet.group.children.length, 1); assert.equal(released, 4);
+    assert.equal(fleet.group.children[0].getObjectByName('nitro-exhaust-flames')!.visible, false);
+    assert.equal(race.opponents.cars.length, 5); assert.equal(race.standings.length, 6);
+  } finally { disposeObject(fleet.group); }
+});
+
+test('motorcycle jets attach to the leaning silencer and never use the current player boost state', () => {
+  const race = new Race(shortTrack(), getVehicle('trail')); const run = finishRun(race, 4);
+  run.frames[1].boosting = true; run.frames[1].steering = 0.6;
+  race.start(); race.phase = 'racing'; race.boosting = true; race.ghost.setReplays([run]);
+  const view = new GhostVehicle(race.vehicle);
+  try {
+    view.update(race, 0.5, race.position);
+    assert.equal(view.group.getObjectByName('nitro-exhaust-flames'), undefined);
+    race.boosting = false; view.update(race, 1.2, race.position);
+    const jets = view.group.getObjectByName('nitro-exhaust-flames')!; assert.ok(jets.visible);
+    assert.notEqual(jets.parent, view.group); assert.notEqual(jets.parent!.rotation.z, 0);
+    assert.deepEqual(jets.children[0].position.toArray(), motorcycleExhaustPort(race.vehicle));
+    run.frames[2].airborne = true; view.update(race, 2, race.position); assert.equal(jets.visible, false);
+    run.frames[2].airborne = false;
+    for (let i = 0; i < 60; i++) view.update(race, 2 + i / 60, race.position);
+    assert.equal(jets.visible, false);
+    view.update(race, 4.01, race.position); assert.equal(view.group.visible, false);
+  } finally { disposeObject(view.group); }
 });

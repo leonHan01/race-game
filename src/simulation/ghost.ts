@@ -118,7 +118,7 @@ export function validGhostRun(value: unknown): value is GhostRun {
   if (!value || typeof value !== 'object') return false;
   const run = value as Partial<GhostRun>;
   if ((run.version !== 1 && run.version !== 2) || typeof run.track !== 'string' || typeof run.vehicleId !== 'string'
-    || (run.version === 2 && (typeof run.id !== 'string' || !run.id || run.id.length > 128))
+    || ((run.version === 2 || run.id !== undefined) && (typeof run.id !== 'string' || !run.id || run.id.length > 128))
     || !Number.isFinite(run.totalTime) || run.totalTime! <= 0
     || !Number.isFinite(run.duration) || run.duration! <= 0 || run.duration! > run.totalTime!
     || !Array.isArray(run.frames) || run.frames.length < 2 || run.frames.length > MAX_GHOST_FRAMES) return false;

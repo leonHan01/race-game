@@ -11,6 +11,8 @@ import { vehicleThumbnail } from './vehicle-thumbnail';
 import { stageElevation } from './stage-elevation';
 import { routeThumbnail } from './route-thumbnail';
 import { ITEMS, ITEM_KINDS, RACE_MODES } from '../content/items';
+import { GHOST_COLORS, MAX_GHOSTS } from '../content/ghosts';
+import type { GhostRun } from '../simulation/ghost';
 
 const icons = {
   arrow: '<path d="M4 12h15m-6-6 6 6-6 6"/>',
@@ -30,6 +32,11 @@ export const formatTime = (seconds: number | null) => {
   const centiseconds = Math.floor(Math.max(0, seconds) * 100);
   return `${Math.floor(centiseconds / 6000).toString().padStart(2, '0')}:${Math.floor(centiseconds / 100) % 60 < 10 ? '0' : ''}${Math.floor(centiseconds / 100) % 60}.${(centiseconds % 100).toString().padStart(2, '0')}`;
 };
+
+export const ghostLegend = (runs: readonly GhostRun[], elapsed: number) => runs.map((run, i) => {
+  const label = `历史第 ${i + 1} 名 · ${formatTime(run.totalTime)}${elapsed > run.duration ? ' · 已完赛' : ''}`;
+  return `<span style="color:${GHOST_COLORS[i]}" class="${elapsed > run.duration ? 'is-finished' : ''}" title="${label}" aria-label="${label}"><i aria-hidden="true"></i>${i + 1}</span>`;
+}).join('');
 
 
 export function vehicleModePicker(mode: VehicleMode, disabled = false, includeLongboard = false) {
@@ -58,6 +65,7 @@ export class UI {
   private lastPenalty = 0;
   private nextLeaderboardUpdate = 0;
   private leaderboardHTML = '';
+  private ghostHTML = '';
   private toastTimer?: ReturnType<typeof setTimeout>;
   private cache = new Map<string, HTMLElement>();
 
@@ -89,7 +97,7 @@ export class UI {
         <footer class="menu-footer"><span>BUILT FOR THE UNTAMED.</span><span>EST. 2026 <i> / </i> DUSTLINE RALLY CLUB</span></footer>
       </main>
       <section id="hud" class="hud hidden" aria-label="比赛仪表">
-        <div class="stage-clock"><span id="hud-stage" class="eyebrow"></span><div id="race-time">00:00.00</div><p>个人最佳 <strong id="best-time">—:——.——</strong></p><p id="ghost-status" class="ghost-status">本场轨迹记录中</p></div>
+        <div class="stage-clock"><span id="hud-stage" class="eyebrow"></span><div id="race-time">00:00.00</div><p>个人最佳 <strong id="best-time">—:——.——</strong></p><div class="ghost-info"><span id="ghost-status">本场轨迹记录中</span><span id="ghost-legend" class="ghost-legend" aria-label="历史前五名影子颜色"></span></div></div>
         <aside class="race-order" aria-label="实时竞速名次"><span class="eyebrow">POSITION</span><div><strong id="race-rank">6</strong><span> / 6</span></div><ol id="race-leaderboard"></ol></aside>
         <aside id="item-panel" class="item-panel hidden" aria-label="道具栏">
           <button id="item-button" data-action="use-item" disabled aria-label="使用道具，快捷键 E" aria-describedby="item-description">
@@ -274,9 +282,10 @@ export class UI {
     this.updateItems(race);
     if (race.phase === 'menu') return;
     this.set('race-time', formatTime(race.totalTime));
-    this.set('ghost-status', race.ghost.loading ? '正在载入最佳影子' : race.ghost.replay
-      ? race.elapsed > race.ghost.replay.duration ? '最佳影子已完赛' : '最佳影子 · 同步挑战' : '本场轨迹记录中');
-    this.get('ghost-status').classList.toggle('has-ghost', race.ghost.replay !== null);
+    this.set('ghost-status', race.ghost.loading ? '正在载入历史影子' : race.ghost.replays.length
+      ? `历史影子 ${race.ghost.replays.length}/${MAX_GHOSTS}` : '本场轨迹记录中');
+    const legend = ghostLegend(race.ghost.replays, race.elapsed);
+    if (legend !== this.ghostHTML) { this.get('ghost-legend').innerHTML = legend; this.ghostHTML = legend; }
     const standings = race.standings;
     this.set('race-rank', String(standings.findIndex(row => row.player) + 1));
     if (race.elapsed >= this.nextLeaderboardUpdate) {

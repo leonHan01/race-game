@@ -17,7 +17,7 @@ import { ItemVisuals } from './items';
 import { placeGroundShadow } from './ground-shadow';
 import { BIKE_AXLES } from './motorcycle';
 import { SprintView } from './sprint-view';
-import { GhostVehicle } from './ghost';
+import { GhostFleet } from './ghost';
 
 const DUST_COUNT = 160;
 interface Dust { x: number; y: number; z: number; vx: number; vz: number; life: number; maxLife: number; size: number; spread: number }
@@ -29,7 +29,7 @@ export class RallyRenderer {
   car = createPlayerVehicle(raceSelection(settings.mode, settings.stageId, settings.vehicleId).vehicle);
   private rivals = new RivalCars(raceSelection(settings.mode, settings.stageId, settings.vehicleId).vehicle.mode);
   private itemVisuals?: ItemVisuals;
-  private ghost?: GhostVehicle;
+  private ghost?: GhostFleet;
   private sceneryRoot = new THREE.Group();
   private dust: Dust[] = [];
   private dustCursor = 0;
@@ -187,8 +187,8 @@ export class RallyRenderer {
     }
     this.car.setLivery(settings.livery);
     this.rivals.update(race, pose.rivals, active ? dt : 0);
-    if (race.phase !== 'menu' && race.ghost.replay && !this.ghost) {
-      this.ghost = new GhostVehicle(race.vehicle); this.scene.add(this.ghost.group);
+    if (race.phase !== 'menu' && race.ghost.replays.length && !this.ghost) {
+      this.ghost = new GhostFleet(race.vehicle); this.scene.add(this.ghost.group);
     }
     this.ghost?.update(race, pose.elapsed, pose.position);
     if (race.mode === 'items' && !this.itemVisuals) { this.itemVisuals = new ItemVisuals(race); this.scene.add(this.itemVisuals.group); }

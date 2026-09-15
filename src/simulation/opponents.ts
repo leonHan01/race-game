@@ -75,8 +75,7 @@ export class Opponents {
     for (let sample = 0; sample <= 12; sample++) {
       const ahead = horizon * (sample / 12) ** 2;
       const curvature = Math.abs(this.track.curvature(car.distance + ahead));
-      const cornerGrip = difficulty.id === 'hard' ? 1.35 : 1;
-      const cornerSpeed = Math.sqrt(8.4 * cornerGrip * this.track.definition.grip * car.vehicle.grip / Math.max(0.0005, curvature)) * pace;
+      const cornerSpeed = Math.sqrt(8.4 * difficulty.cornerGrip * this.track.definition.grip * car.vehicle.grip / Math.max(0.0005, curvature)) * pace;
       target = Math.min(target, Math.sqrt(cornerSpeed ** 2 + 2 * braking * Math.max(0, ahead - anticipation)));
     }
     return Math.min(limit, target);
@@ -105,13 +104,14 @@ export class Opponents {
 
   private chooseLane(car: Rival, traffic: Traffic[], difficulty: DifficultyProfile) {
     const score = (lane: number) => {
-      let ahead = 100;
+      let ahead = Math.max(100, car.speed * 3);
       for (const other of traffic) {
         if (other.id === car.id || Math.min(Math.abs(other.lane - lane), Math.abs(other.targetLane - lane)) > 2.9) continue;
         const gap = other.distance - car.distance;
         const predictedGap = gap + (other.speed - car.speed) * 1.2;
         if (Math.min(gap, predictedGap) < 11 && Math.max(gap, predictedGap) > -9 && Math.abs(lane - car.lane) > 0.8) return -Infinity;
-        if (gap > 0) ahead = Math.min(ahead, gap);
+        // Start passing while there is still time to move across, based on closing speed.
+        if (gap > 0) ahead = Math.min(ahead, gap - Math.max(0, car.speed - other.speed) * (difficulty.id === 'hard' ? 2.5 : 1.5));
       }
       return ahead - Math.abs(lane - car.lane) * 2;
     };
@@ -145,7 +145,8 @@ export class Opponents {
       const stunned = !!itemState && itemState.stun > 0;
       const itemBoost = !!itemState && itemState.boost > 0 && !stunned && !car.airborne;
       const clearLine = traffic.every(other => other.id === car.id
-        || Math.abs(other.distance - car.distance) > Math.max(28, car.speed * 1.2, other.speed * 0.8));
+        || Math.abs(other.distance - car.distance) > Math.max(expert ? 60 : 28, car.speed * 1.2, other.speed * 0.8,
+          other.distance > car.distance ? Math.max(0, car.speed - other.speed) * 3.5 + 12 : 0));
       if (Math.abs(car.targetLane - car.lane) < 0.2) car.laneHold = Math.max(0, car.laneHold - dt);
       car.planIn -= dt;
       if (car.planIn <= 0) {
@@ -171,7 +172,9 @@ export class Opponents {
           const closingSpeed = Math.max(0, car.speed - other.speed);
           const braking = car.vehicle.braking * this.track.definition.grip;
           const passing = Math.min(Math.abs(other.lane - car.targetLane), Math.abs(other.targetLane - car.targetLane)) >= 2.9;
-          const followingGap = (passing ? 6 : 7) + car.speed * difficulty.headway + closingSpeed ** 2 / (2 * braking * 0.45);
+          // A car already moving into a free lane needs less following margin; emergency stopping still applies.
+          const followingGap = (passing ? 6 : 7) + car.speed * difficulty.headway * (passing ? 0.5 : 1)
+            + closingSpeed ** 2 / (2 * braking * (passing ? 0.7 : 0.45));
           trafficTarget = Math.min(trafficTarget, Math.max(0, other.speed + (gap - followingGap) * 0.75));
           emergencyBrake ||= gap - 5.5 < closingSpeed ** 2 / (2 * braking) + closingSpeed * 0.25;
           available = Math.min(available, Math.max(0, gap - 5.5));
@@ -191,7 +194,8 @@ export class Opponents {
       const useNitro = powered && !car.airborne && !stunned && !emergencyBrake && !car.drifting && Math.abs(car.driftAngle) < 0.13
         && car.nitro > (wasUsingNitro ? 0 : 20) && car.nitroCooldown === 0 && car.speed > 18
         && Math.abs(curvature) < 0.002 && roadTarget > car.speed + (wasUsingNitro ? -1 : 5)
-        && roadTarget >= nitroLimit - 0.5
+        // Short exits can fund a burst even when the next braking zone prevents maximum speed.
+        && (roadTarget >= nitroLimit - 0.5 || roadTarget > car.speed + 3)
         && trafficTarget > car.speed + 8 && Math.abs(this.track.grade(car.distance + car.speed * 0.5)) < 0.18;
       const boostTime = useNitro ? Math.min(dt, car.nitro / NITRO_DRAIN_PER_SECOND) : 0;
       car.usingNitro = boostTime > 0;
@@ -203,7 +207,8 @@ export class Opponents {
       const boostAcceleration = Math.max(NITRO_ACCELERATION * boostTime / dt, itemBoost ? 24 : 0);
       let acceleration = clamp((target - car.speed) * 1.4, -car.vehicle.braking * this.track.definition.grip,
         Math.max(0, car.vehicle.acceleration * difficulty.acceleration * (1 - car.speed / (normalLimit * 1.1))) + boostAcceleration);
-      if (car.drifting) acceleration = Math.min(acceleration, 1.5);
+      // A controlled power slide costs traction, but still allows exit acceleration.
+      if (car.drifting && acceleration > 0) acceleration *= 1 - Math.abs(car.driftAngle) * 0.65;
       if (car.vehicle.mode === 'longboard') {
         const natural = longboardAcceleration(car.speed, this.track.grade(car.distance), car.speed < 9, car.speed >= 9, false, false, 1, car.vehicle);
         acceleration = Math.min(natural * car.pace * difficulty.acceleration, clamp((target - car.speed) * 1.4, -car.vehicle.braking, 5));
@@ -223,9 +228,9 @@ export class Opponents {
       car.distance = deferFinish ? car.distance + advance : Math.min(this.track.length, car.distance + advance);
       const previousLane = car.lane;
       const laneError = car.targetLane - car.lane;
-      const laneSpeedLimit = expert && clearLine ? 3.4 : 2.1;
-      const laneAcceleration = expert && clearLine ? 5.2 : 3.2;
-      const desiredLaneVelocity = clamp(laneError * (expert && clearLine ? 2 : 1.6), -laneSpeedLimit, laneSpeedLimit) * Math.min(1, car.speed / 3);
+      const laneSpeedLimit = expert ? 3.4 : 2.1;
+      const laneAcceleration = expert ? 5.2 : 3.2;
+      const desiredLaneVelocity = clamp(laneError * (expert ? 2 : 1.6), -laneSpeedLimit, laneSpeedLimit) * Math.min(1, car.speed / 3);
       car.laneVelocity += clamp(desiredLaneVelocity - car.laneVelocity, -laneAcceleration * dt, laneAcceleration * dt);
       let laneStep = car.laneVelocity * dt;
       if (Math.abs(laneStep) > Math.abs(laneError) && laneStep * laneError >= 0) laneStep = laneError;

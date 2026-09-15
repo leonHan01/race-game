@@ -92,9 +92,11 @@ h1 > span:first-child { color: var(--gold); }
 #race-time { font-family: var(--condensed); font-weight: 500; font-size: 48px; letter-spacing: 2px; font-variant-numeric: tabular-nums; margin-top: 6px; }
 .stage-clock p { color: #d2d8c7; font-size: 9px; margin: 3px 0; }
 .stage-clock p strong { font: 500 12px var(--condensed); margin-left: 12px; }
-.stage-clock .ghost-status { margin-top: 7px; color: #bcc7bd; }
-.stage-clock .ghost-status.has-ghost { color: #89e9f2; }
-.ghost-status.has-ghost::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border: 1px solid currentColor; border-radius: 50%; background: #89e9f230; }
+.ghost-info { display: flex; align-items: center; gap: 8px; margin-top: 7px; color: #bcc7bd; font-size: 9px; }
+.ghost-legend { display: inline-flex; gap: 7px; }
+.ghost-legend > span { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; pointer-events: auto; }
+.ghost-legend i { width: 5px; height: 5px; border: 1px solid currentColor; border-radius: 50%; background: currentColor; }
+.ghost-legend .is-finished { opacity: 0.45; }
 .stage-progress { position: absolute; width: 240px; top: 41px; left: 50%; transform: translateX(-50%); }
 .stage-progress > div:first-child { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 1.5px; }
 .stage-progress strong { color: var(--gold); font-weight: 600; }
