@@ -1,6 +1,7 @@
 import { getStage, DOWNHILL_STAGE } from './stages';
 import { getVehicle, LONGBOARD } from './vehicles';
-import type { RaceMode } from './items';
+export type RaceMode = 'classic' | 'downhill';
+export const RACE_MODES: Record<RaceMode, string> = { classic: '经典竞速', downhill: '长板速降' };
 
 /** Car and motorcycle preferences survive a detour into longboard downhill. */
 export function raceSelection(mode: RaceMode, stageId: unknown, vehicleId: unknown) {

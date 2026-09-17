@@ -332,41 +332,13 @@ dialog[data-page='stage'], dialog[data-page='garage'] { width: min(840px, calc(1
 .mode-picker small { display: block; margin-top: 4px; font-size: 7px; letter-spacing: 1.2px; color: #c0cabb; }
 .mode-picker button[aria-pressed='true'] { border-color: #83e4ee; background: #1c444ce8; color: #b9f8fa; }
 .hero-copy { max-width: 355px; }
-.item-panel { --item-color: #b9d8df; position: absolute; top: 244px; left: 4.3vw; width: 248px; background: #172c31ed; border: 1px solid #b2dae744; border-top: 2px solid var(--item-color); padding: 12px; pointer-events: auto; }
-#item-button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; text-align: left; color: var(--item-color); min-height: 60px; }
-#item-button:disabled { cursor: default; }
-#item-button[data-ready='true']:hover { background: #b1ebff12; }
-#item-button > kbd { margin-left: auto; font-size: 11px; color: var(--item-color); }
-.item-symbol { display: grid; place-items: center; width: 49px; height: 49px; flex-shrink: 0; background: #b4f5ff10; border: 1px solid currentColor; border-radius: 10px; font: 700 34px Arial, sans-serif; }
-.item-copy { display: flex; flex-direction: column; gap: 5px; }
-.item-copy small { font-size: 7px; letter-spacing: 2px; color: #c0d1d3; }
-.item-copy strong { font-size: 15px; font-weight: 600; }
-.item-copy > span { font-size: 9px; color: #c4d8d8; }
-#item-description { color: #b8d2d2; font-size: 10px; line-height: 1.7; margin: 9px 0 0; }
-.item-effects { color: #b5f6e9; font-size: 10px; line-height: 1.7; margin-top: 6px; font-variant-numeric: tabular-nums; }
-.item-notice { color: #ffeab4; font-size: 10px; line-height: 1.7; margin: 7px 0 0; }
-.item-notice:empty, .item-effects:empty { display: none; }
-.item-hit { border-color: #ffb792; }
-#item-key-hint { display: inline-flex; gap: 5px; align-items: center; }
-@media (max-width: 800px) { .item-panel { left: 24px; top: 223px; width: 196px; } .item-copy strong { font-size: 13px; } .item-symbol { width: 38px; height: 42px; font-size: 28px; } #item-button { gap: 9px; } }
 @media (max-width: 600px) {
   .mode-picker { margin-bottom: 12px; gap: 7px; }
   .mode-picker button { min-width: 137px; padding: 8px 12px; }
   .mode-picker span { font-size: 11px; }
-  .item-panel { left: 20px; top: 216px; width: 172px; padding: 9px; }
-  #item-button { gap: 8px; min-height: 47px; }
-  #item-button > kbd { display: none; }
-  .item-copy > span { font-size: 8px; }
-  #item-description, .item-notice, .item-effects { font-size: 9px; }
-  .item-copy strong { font-size: 12px; }
 }
 @media (max-height: 780px) and (min-width: 801px) { .hero h1 { font-size: min(8vw, 92px); margin: 16px 0; } .hero { top: 18%; } }
 @media (max-height: 740px) and (max-width: 600px) { .hero h1 { font-size: 65px; margin: 12px 0; } .hero .start-row { margin-top: 0; } }
-@media (max-height: 650px) {
-  .item-panel { top: 195px; width: 180px; padding: 8px; }
-  #item-description { display: none; }
-  .item-notice { font-size: 9px; }
-}
 @media (max-height: 500px) {
   .hero { top: 19%; }
   .hero h1 { font-size: 55px; margin: 8px 0; }
@@ -375,12 +347,9 @@ dialog[data-page='stage'], dialog[data-page='garage'] { width: min(840px, calc(1
   .mode-picker button { padding: 6px 10px; min-width: 120px; }
   .mode-picker small { display: none; }
   .hero .start-row { margin-top: 0; }
-  .item-panel { top: 158px; left: 24px; width: 174px; }
-  .item-panel .item-notice { display: none; }
-  body[data-race-mode='items'] .race-map { display: none; }
 }
 
-/* Vehicle choice is independent of classic / item race rules. */
+/* Vehicle choice is independent of race rules. */
 .vehicle-mode-picker { display: flex; gap: 5px; margin: 0 0 14px; width: fit-content; padding: 3px; border: 1px solid #c7cfaf55; background: #1c2923d9; border-radius: 4px; }
 .vehicle-mode-picker button { padding: 7px 14px; font-size: 11px; color: #bdcbb9; border-radius: 2px; white-space: nowrap; }
 .vehicle-mode-picker button[aria-pressed='true'] { background: var(--gold); color: var(--ink); font-weight: 700; }
@@ -425,3 +394,31 @@ body[data-race-mode='downhill'] .longboard-actions { display: block; }
 @media (pointer: coarse) {
   .longboard-action-row button { min-height: 40px; }
 }
+
+/* A lightweight broadcast panel leaves the aerial view unobstructed. */
+.spectator-panel { position: fixed; z-index: 12; left: 24px; top: 100px; width: min(320px, calc(100vw - 48px)); padding: 18px; color: #f4eee3; background: rgba(19, 26, 27, .9); border: 1px solid #ffffff26; border-radius: 12px; }
+.spectator-panel > strong { display: block; margin-top: 8px; font-size: 21px; }
+.spectator-panel p { color: #c5c9c2; font-size: 12px; line-height: 1.6; }
+.spectator-panel ol { list-style: none; padding: 0; margin: 12px 0; }
+.spectator-panel li { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 13px; }
+.spectator-panel li b { width: 15px; }
+.spectator-panel li i { width: 8px; height: 8px; border-radius: 50%; }
+.spectator-panel li strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+.spectator-panel > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.spectator-panel button { min-height: 36px; padding: 8px 10px; font-size: 12px; }
+body[data-spectating="true"] #hud, body[data-spectating="true"] #countdown { display: none; }
+@media (max-height: 650px) { .spectator-panel { top: 70px; max-height: calc(100dvh - 90px); overflow-y: auto; } }
+
+.start-row { flex-wrap: wrap; }
+.start-row .spectate-button { display: flex; white-space: nowrap; color: #f1d175; font-size: 13px; }
+
+#world.free-camera-active { cursor: grab; touch-action: none; }
+#world.free-camera-active:active { cursor: grabbing; }
+.spectator-panel { max-height: calc(100dvh - 120px); overflow-y: auto; }
+.spectator-panel .free-camera-controls { display: block; border-top: 1px solid #ffffff26; margin-top: 12px; padding-top: 8px; }
+.free-camera-controls p { margin: 0 0 8px; }
+.free-camera-controls output { display: block; color: #f1d175; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+.camera-move-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.camera-move-buttons button { background: #ffffff12; border: 1px solid #ffffff26; touch-action: none; }
+.camera-move-buttons button.pressed, #free-camera-toggle[aria-pressed="true"] { background: #f1d17530; color: #f1d175; }
+@media (max-height: 650px) { .spectator-panel { max-height: calc(100dvh - 90px); } }

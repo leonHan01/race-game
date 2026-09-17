@@ -170,19 +170,3 @@ test('existing outdoor and indoor stages retain their original grounded handling
     assert.equal(race.position.y, race.track.surfaceHeight(race.position.x, race.position.z));
   }
 });
-
-test('jumps above ground items do not collect pads or hit traps, and landing restores contact', () => {
-  for (const height of [0, 5]) {
-    const race = new Race(new Track(getStage('meadow'))); race.mode = 'items'; race.phase = 'racing';
-    const pad = race.items.pads[0]; race.placeOnTrack(pad.distance - 3, pad.lane);
-    race.vertical.clearance = height; race.vertical.airborne = height > 0; race.position.y += height;
-    race.items.traps.push({ id: 987, owner: 'rival-1', distance: pad.distance, lane: pad.lane,
-      life: 20, position: { ...pad.position } });
-    race.items.beginStep(STEP, race);
-    Object.assign(race.position, race.track.position(pad.distance + 3, pad.lane)); race.position.y += height;
-    race.distance = pad.distance + 3;
-    race.items.endStep(STEP, race);
-    assert.equal(race.items.player.stun > 0, height === 0);
-    assert.equal(race.items.player.padCooldown > 0, height === 0);
-  }
-});

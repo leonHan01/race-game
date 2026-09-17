@@ -107,19 +107,17 @@ function rival(race: Race, index: number, distance: number, lane = 0, speed = 0)
   return car;
 }
 
-test('the race applies player/rival impact, damage and persistent AI displacement in classic and item modes', () => {
-  for (const mode of ['classic', 'items'] as const) {
-    const race = running(); race.mode = mode; race.placeOnTrack(40); race.speed = 80;
-    const car = rival(race, 0, 45.1); const heading = race.heading;
-    race.update(STEP, idleControls());
-    assert.ok(race.speed < 55 && car.speed > 10);
-    assert.ok(race.integrity < 100 && race.integrity >= 0); assert.equal(race.penalty, 0);
-    close(race.heading, heading);
-    assert.ok(car.distance - race.distance >= 4.6999);
-    const distance = car.distance;
-    race.update(STEP, idleControls());
-    assert.ok(car.distance > distance, 'AI retains momentum after contact');
-  }
+test('the race applies player/rival impact, damage and persistent AI displacement in classic mode', () => {
+  const race = running(); race.placeOnTrack(40); race.speed = 80;
+  const car = rival(race, 0, 45.1); const heading = race.heading;
+  race.update(STEP, idleControls());
+  assert.ok(race.speed < 55 && car.speed > 10);
+  assert.ok(race.integrity < 100 && race.integrity >= 0); assert.equal(race.penalty, 0);
+  close(race.heading, heading);
+  assert.ok(car.distance - race.distance >= 4.6999);
+  const distance = car.distance;
+  race.update(STEP, idleControls());
+  assert.ok(car.distance > distance, 'AI retains momentum after contact');
 });
 
 test('AI-to-AI overlap is separated even when the player is far away', () => {

@@ -186,7 +186,7 @@ test('persisted ghosts remain isolated by stage, vehicle, difficulty, throttle a
   const races = [new Race(shortTrack()), new Race(shortTrack()), new Race(shortTrack()),
     new Race(shortTrack()), new Race(shortTrack(), getVehicle('apex')), new Race(shortTrack(), LONGBOARD),
     new Race(new Track({ ...shortTrack().definition, id: 'valley' }))];
-  races[1].difficulty = 'hard'; races[2].autoThrottle = true; races[3].mode = 'items';
+  races[1].difficulty = 'hard'; races[2].autoThrottle = true; races[3].mode = 'downhill';
   for (let i = 0; i < races.length; i++) { finishRun(races[i], i + 2); assert.equal(records.save(races[i]), true); }
   await new Promise(resolve => setImmediate(resolve));
   const reloaded = new GhostRecords(storage);
@@ -265,7 +265,7 @@ test('single-ghost saves migrate into history, including a finish saved before t
 test('delayed persistence keeps the completed race category after next-race settings change', async t => {
   localScores(t); const storage = new MemoryGhostStorage(); const records = new GhostRecords(storage); const race = new Race(shortTrack());
   const key = recordKey(race); finishRun(race, 4); records.save(race);
-  race.start(); race.difficulty = 'hard'; race.autoThrottle = true; race.mode = 'items';
+  race.start(); race.difficulty = 'hard'; race.autoThrottle = true; race.mode = 'downhill';
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(storage.values.has(key), true); assert.equal(storage.values.has(recordKey(race)), false);
   assert.deepEqual(await records.load(race), []);
@@ -364,4 +364,53 @@ test('motorcycle jets attach to the leaning silencer and never use the current p
     assert.equal(jets.visible, false);
     view.update(race, 4.01, race.position); assert.equal(view.group.visible, false);
   } finally { disposeObject(view.group); }
+});
+
+test('spectator start loads track-wide top five across vehicles and driving settings', async () => {
+  const runs = [12, 9, 15, 10, 14, 11].map((duration, i) => {
+    const recorded = new Race(shortTrack(), getVehicle(i % 2 ? 'vortex' : 'swift'));
+    recorded.difficulty = i % 2 ? 'hard' : 'easy'; recorded.autoThrottle = true;
+    return { key: recordKey(recorded), run: finishRun(recorded, duration) };
+  });
+  const data = new Map<string, GhostRun[]>();
+  runs.forEach(({key, run}) => data.set(key, [...(data.get(key) ?? []), run]));
+  const records = new GhostRecords({
+    async load(key) { return data.get(key); },
+    async save() { throw new Error('read-only fixture'); },
+    ...{ async loadAll() { return [...data.values()]; } },
+  });
+  const watching = new Race(shortTrack(), getVehicle('falcon')); watching.spectating = true;
+  const history = await records.load(watching);
+  assert.deepEqual(history.map(run => run.totalTime), [9, 10, 11, 12, 14]);
+  watching.spectating = false;
+  assert.deepEqual(await records.load(watching), [], 'driving still uses the exact competition category');
+});
+
+test('spectator fleet uses original vehicle models and replaces them when the top five changes', t => {
+  const race = new Race(shortTrack()); race.spectating = true;
+  const swift = finishRun(new Race(shortTrack(), getVehicle('swift')), 9);
+  const vortex = finishRun(new Race(shortTrack(), getVehicle('vortex')), 10);
+  race.start(); race.phase = 'racing'; race.ghost.setReplays([swift, vortex]);
+  const fleet = new GhostFleet(race.vehicle); t.after(() => disposeObject(fleet.group));
+  fleet.update(race, 1, race.position);
+  assert.equal(fleet.group.children.length, 2);
+  assert.deepEqual(fleet.group.getObjectByName('history-ghost-1')!.scale.toArray(), getVehicle('swift').scale);
+  assert.deepEqual(fleet.group.getObjectByName('history-ghost-2')!.scale.toArray(), getVehicle('vortex').scale);
+  const old = fleet.group.getObjectByName('history-ghost-1');
+  race.ghost.setReplays([vortex]); fleet.update(race, 1, race.position);
+  assert.equal(fleet.group.children.length, 1);
+  assert.notEqual(fleet.group.children[0], old);
+  assert.deepEqual(fleet.group.children[0].scale.toArray(), getVehicle('vortex').scale);
+  assert.equal(fleet.group.children[0].visible, true);
+});
+
+test('spectator loading rejects stale layouts and reports unavailable storage instead of an empty history', async () => {
+  const watching = new Race(shortTrack()); watching.spectating = true;
+  const good = finishRun(new Race(shortTrack()), 15);
+  const stale = { ...good, id: 'stale', track: good.track + '-old', totalTime: 5 };
+  const unknown = { ...good, id: 'unknown', vehicleId: 'missing' };
+  const data = { async load() { return []; }, async save() { return []; }, async loadAll() { return [good, stale, unknown]; } };
+  assert.deepEqual(await new GhostRecords(data).load(watching), [good]);
+  data.loadAll = async () => { throw new Error('unavailable'); };
+  await assert.rejects(new GhostRecords(data).load(watching), /storage unavailable/);
 });

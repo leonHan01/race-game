@@ -1,9 +1,12 @@
 import { bestTime, recordKey, saveRecord } from './settings';
+import { getVehicle } from './content/vehicles';
 import type { Race } from './simulation/race';
-import { ghostRunId, rankGhosts, validGhost, validGhostRun, type GhostRun } from './simulation/ghost';
+import { ghostRunId, ghostTrackSignature, rankGhosts, validGhost, validGhostRun, type GhostRun } from './simulation/ghost';
 
 export interface GhostStorage {
   load(key: string): Promise<unknown>;
+  /** Read every category for a layout; spectator history is independent of driving settings. */
+  loadAll?(track: string): Promise<unknown[]>;
   /** Atomically append a finish and return the retained history. */
   save(key: string, run: GhostRun): Promise<unknown>;
 }
@@ -47,6 +50,25 @@ export class IndexedGhostStorage implements GhostStorage {
     });
   }
 
+  async loadAll(track: string): Promise<unknown[]> {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('best', 'readonly');
+      const request = transaction.objectStore('best').openCursor();
+      const runs: unknown[] = [];
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        for (const run of candidates(cursor.value)) {
+          if (run && typeof run === 'object' && 'track' in run && run.track === track) runs.push(run);
+        }
+        cursor.continue();
+      };
+      transaction.oncomplete = () => resolve(runs);
+      transaction.onabort = transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
   async save(key: string, run: GhostRun) {
     const db = await this.open();
     return new Promise<GhostRun[]>((resolve, reject) => {
@@ -77,7 +99,29 @@ export class GhostRecords {
     return session === undefined ? stored : stored === null ? session : Math.min(stored, session);
   }
 
-  async load(race: Category): Promise<GhostRun[]> {
+  private async loadSpectator(race: Category): Promise<GhostRun[]> {
+    const category = snapshot(race);
+    let stored: unknown[] = [];
+    let failed = false;
+    try {
+      stored = this.storage.loadAll
+        ? await this.storage.loadAll(ghostTrackSignature(category.track))
+        : [await this.storage.load(recordKey(category))];
+    } catch { failed = true; }
+    const runs = [...stored.flatMap(candidates), ...[...this.session.values()].flat()]
+      .filter((run): run is GhostRun => {
+        if (!validGhostRun(run)) return false;
+        const vehicle = getVehicle(run.vehicleId);
+        return vehicle.id === run.vehicleId && validGhost(run, {
+          track: category.track, vehicleId: vehicle.id, isLongboard: vehicle.mode === 'longboard',
+        });
+      });
+    if (failed && !runs.length) throw new Error('Historical replay storage unavailable');
+    return rankGhosts(runs);
+  }
+
+  async load(race: Category & { spectating?: boolean }): Promise<GhostRun[]> {
+    if (race.spectating) return this.loadSpectator(race);
     const category = snapshot(race); const key = recordKey(category);
     if (this.loaded.has(key)) return history(this.session.get(key), category);
     const pending = this.loads.get(key); if (pending) return pending;
@@ -95,7 +139,7 @@ export class GhostRecords {
 
   /** Commit at the finish line; the delayed results dialog only presents the result. */
   save(race: Race): boolean {
-    if (race.phase !== 'finished' || !Number.isFinite(race.totalTime) || race.totalTime <= 0) return false;
+    if (race.spectating || race.phase !== 'finished' || !Number.isFinite(race.totalTime) || race.totalTime <= 0) return false;
     const best = this.best(race);
     const newRecord = best === null || race.totalTime < best;
     if (newRecord) saveRecord(race.totalTime, race);

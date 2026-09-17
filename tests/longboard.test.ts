@@ -131,18 +131,17 @@ test('mode switch updates track, rider, opponents and timeline and restores the 
   assert.deepEqual(context.timeline.pose.position, context.race.position);
   assert.ok(context.race.opponents.cars.every((car: { vehicle: typeof LONGBOARD }) => car.vehicle.mode === 'longboard'));
   assert.equal(context.settings.stageId, 'depot'); assert.equal(context.settings.vehicleId, 'trail');
-  const active = context.race; active.start(); context.setRaceMode('items'); assert.equal(context.race, active);
-  active.phase = 'menu'; context.setRaceMode('items');
-  assert.equal(context.race.stageId, 'depot'); assert.equal(context.race.vehicleId, 'trail'); assert.equal(context.race.mode, 'items');
+  const active = context.race; active.start(); context.setRaceMode('classic'); assert.equal(context.race, active);
+  active.phase = 'menu'; context.setRaceMode('classic');
+  assert.equal(context.race.stageId, 'depot'); assert.equal(context.race.vehicleId, 'trail'); assert.equal(context.race.mode, 'classic');
   assert.ok(context.race.opponents.cars.every((car: { vehicle: typeof LONGBOARD }) => car.vehicle.mode === 'motorcycle'));
 });
 
-test('downhill records cannot read or overwrite classic, item or legacy records', () => {
+test('downhill records cannot read or overwrite classic or legacy records', () => {
   const values = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } });
   try {
     const race = boardRace(); assert.ok(saveRecord(150, race)); assert.equal(bestTime(race), 150);
-    assert.equal(bestTime({ ...race, mode: 'items', stageId: race.stageId, vehicleId: race.vehicleId }), null);
     assert.equal(bestTime({ ...race, mode: 'classic', stageId: race.stageId, vehicleId: race.vehicleId }), null);
     assert.equal(saveRecord(151, race), false); assert.equal(saveRecord(149, race), true);
     assert.equal(values.size, 1); assert.ok([...values.keys()][0].endsWith('-downhill'));

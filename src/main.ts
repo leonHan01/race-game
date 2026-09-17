@@ -15,12 +15,13 @@ import { RaceTimeline, PaintClock } from './presentation';
 import type { RallyRenderer } from './render/renderer';
 import { RallyAudio } from './audio';
 import { Input } from './input';
+import { FreeCameraInput } from './free-camera-input';
 import { saveSettings, settings } from './settings';
 import { ghostRecords } from './ghost-records';
 import { UI } from './ui/ui';
 import { getVehicle } from './content/vehicles';
 import { raceSelection } from './content/modes';
-import type { RaceMode } from './content/items';
+import type { RaceMode } from './content/modes';
 
 const initialSelection = raceSelection(settings.mode,
   settings.mode === 'downhill' ? settings.downhillStageId : settings.stageId,
@@ -33,6 +34,7 @@ const paintClock = new PaintClock();
 const ui = new UI(track);
 ui.setSelection(race);
 const input = new Input();
+const cameraInput = new FreeCameraInput(ui.canvas);
 const audio = new RallyAudio();
 let view: RallyRenderer | undefined;
 let dirty = true;
@@ -65,24 +67,28 @@ function pause() {
   race.pause(); input.clear(); audio.silence(); wasPausedForDialog = false;
   ui.openDialog('pause', race); dirty = true;
 }
-function start() {
+function start(spectating = false) {
   if (!view?.contextAvailable) return;
   generation++;
   ui.closeDialog(); input.clear(); audio.reset(); void audio.unlock();
   race.difficulty = settings.difficulty; race.autoThrottle = settings.autoThrottle;
   race.mode = settings.mode;
+  race.spectating = spectating; race.spectatorTarget = -1;
   race.start(); timeline.reset(); view.reset(); lastFrame = performance.now();
   const startingRace = race; const startingGeneration = generation;
   race.ghost.loading = true;
   void ghostRecords.load(startingRace).then(runs => {
     if (generation !== startingGeneration || race !== startingRace) return;
     startingRace.ghost.setReplays(runs); dirty = true;
+  }).catch(() => {
+    if (generation !== startingGeneration || race !== startingRace) return;
+    startingRace.ghost.setReplays([]); startingRace.ghost.loadError = true; dirty = true;
   });
   wasPausedForDialog = false; dirty = true;
 }
 function home() {
   generation++; ui.closeDialog(); audio.reset(); input.clear();
-  race.reset(); race.phase = 'menu'; timeline.reset(); view?.reset();
+  race.spectating = false; race.reset(); race.phase = 'menu'; timeline.reset(); view?.reset();
   race.difficulty = settings.difficulty; race.autoThrottle = settings.autoThrottle; race.mode = settings.mode; ui.setSelection(race);
   wasPausedForDialog = false; dirty = true;
 }
@@ -103,14 +109,22 @@ function setRaceMode(mode: RaceMode) {
 }
 
 ui.onAction = action => {
-  if (action === 'start' || action === 'restart') start();
+  if (action === 'start') start();
+  else if (action === 'restart') start(race.spectating);
+  else if (action === 'spectate') start(true);
+  else if (action === 'free-camera') {
+    if (!race.spectating || !view?.contextAvailable || ui.dialog.open) return;
+    if (view.freeCamera.active) view.freeCamera.reset(); else view.freeCamera.enter(view.camera);
+    cameraInput.setEnabled(view.freeCamera.active); input.clear(); dirty = true;
+  }
+  else if (action === 'spectator-next') { view?.freeCamera.reset(); cameraInput.setEnabled(false); race.spectatorTarget++; if (race.spectatorTarget >= 5 + race.ghost.replays.length) race.spectatorTarget = -1; dirty = true; }
   else if (action === 'switch-stance') {
+    if (race.spectating) return;
     if (race.isLongboard && race.phase === 'racing' && !race.switchLongboardStance() && !race.longboard.switching) ui.toast('达到 11 km/h 后可做 180° switch');
     dirty = true;
   }
-  else if (action === 'use-item') { race.items.use(race); dirty = true; }
-  else if (action === 'mode-classic' || action === 'mode-items' || action === 'mode-downhill') {
-    setRaceMode(action === 'mode-downhill' ? 'downhill' : action === 'mode-items' ? 'items' : 'classic');
+  else if (action === 'mode-classic' || action === 'mode-downhill') {
+    setRaceMode(action === 'mode-downhill' ? 'downhill' : 'classic');
   }
   else if (action === 'home') home();
   else if (action === 'settings' || action === 'stage' || action === 'garage' || action === 'controls') openDialog(action);
@@ -121,6 +135,7 @@ ui.onAction = action => {
     settings.sound = !settings.sound; saveSettings(); ui.updateSound();
     if (settings.sound) void audio.unlock(); else audio.silence();
   } else if (action === 'camera') {
+    if (race.spectating) { ui.onAction('spectator-next'); return; }
     settings.camera = settings.camera === 0 ? 1 : 0; saveSettings(); dirty = true;
     ui.toast(settings.camera === 0 ? '赛道追尾视角' : '低位赛道视角');
   } else if (action === 'reload') window.location.reload();
@@ -175,14 +190,14 @@ input.onCommand = command => {
     // Native buttons already emit a click on Enter.
     if (!(document.activeElement instanceof HTMLButtonElement)) start();
   }
-  if (command === 'KeyC' && race.phase === 'racing') ui.onAction('camera');
+  if (command === 'KeyF' && race.spectating) ui.onAction('free-camera');
+  if (command === 'KeyC' && (race.phase === 'racing' || race.spectating)) ui.onAction('camera');
   if (command === 'KeyQ' && race.phase === 'racing') ui.onAction('switch-stance');
-  if (command === 'KeyE' && race.phase === 'racing') ui.onAction('use-item');
-  if (command === 'KeyR' && race.phase === 'racing') { race.recover(); timeline.reset(); view?.reset(); dirty = true; }
+  if (command === 'KeyR' && race.phase === 'racing' && !race.spectating) { race.recover(); timeline.reset(); view?.reset(); dirty = true; }
 };
 
 function onHidden() {
-  input.clear();
+  input.clear(); cameraInput.setEnabled(false);
   if (race.phase === 'racing' || race.phase === 'countdown') pause();
   audio.silence();
 }
@@ -198,6 +213,7 @@ window.addEventListener('pageshow', event => {
 });
 
 function recordResult(newRecord: boolean) {
+  if (race.spectating) { ui.toast('观赛结束，所有车辆已完赛'); return; }
   ui.openDialog('results', race, newRecord);
 }
 
@@ -207,7 +223,9 @@ function frame(now: number) {
   animationFrame = requestAnimationFrame(frame);
   const dt = Math.min(0.1, Math.max(0, (now - (lastFrame || now)) / 1000));
   lastFrame = now;
-  input.enabled = race.phase === 'racing' || race.phase === 'countdown';
+  cameraInput.setEnabled(Boolean(race.spectating && view?.freeCamera.active && view.contextAvailable && !ui.dialog.open));
+  if (view?.freeCamera.update(dt, cameraInput.read(), track)) dirty = true;
+  input.enabled = !race.spectating && (race.phase === 'racing' || race.phase === 'countdown');
   input.advance(now);
   const controls = input.read();
   const active = race.phase === 'racing' || race.phase === 'countdown';
@@ -224,12 +242,12 @@ function frame(now: number) {
       }, 3000);
       dirty = true;
     }
-    if (previous === 'countdown' && (race.phase as string) === 'racing') ui.toast(race.isLongboard ? '出发！W 蹬地，Shift 收身，S 脚刹，空格扶地刹滑，X 站滑，Q 切换站姿。' : race.autoThrottle ? '出发！自动油门已开启，专注转向与刹车。' : '出发！按 W / ↑ 踩下油门。');
+    if (!race.spectating && previous === 'countdown' && (race.phase as string) === 'racing') ui.toast(race.isLongboard ? '出发！W 蹬地，Shift 收身，S 脚刹，空格扶地刹滑，X 站滑，Q 切换站姿。' : race.autoThrottle ? '出发！自动油门已开启，专注转向与刹车。' : '出发！按 W / ↑ 踩下油门。');
   }
   const interval = settings.quality === 'low' ? 1000 / 30 : 1000 / 60;
   if ((active || dirty) && paintClock.ready(now, interval, dirty)) {
     view?.render(race, controls, Math.min(0.1, (now - (lastPaint || now)) / 1000), timeline.pose);
-    ui.update(race); audio.update(race); lastPaint = now; dirty = false;
+    ui.update(race, view?.freeCamera.active ? view.freeCamera.height(track) : null); if (!race.spectating) audio.update(race); lastPaint = now; dirty = false;
   }
 }
 
@@ -253,4 +271,4 @@ requestAnimationFrame(() => {
   }, 30);
 });
 
-if (import.meta.hot) import.meta.hot.dispose(() => { cancelAnimationFrame(animationFrame); audio.silence(); view?.dispose(); });
+if (import.meta.hot) import.meta.hot.dispose(() => { cancelAnimationFrame(animationFrame); audio.silence(); cameraInput.dispose(); view?.dispose(); });

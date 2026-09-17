@@ -2,7 +2,7 @@ import type { Difficulty } from './simulation/race';
 import { parseDifficulty } from './content/difficulties';
 import { getStage, DOWNHILL_STAGE, type StageId } from './content/stages';
 import { getVehicle, LONGBOARD, type VehicleId } from './content/vehicles';
-import type { RaceMode } from './content/items';
+import type { RaceMode } from './content/modes';
 
 export const LIVERIES = [
   { name: '砂岩白', color: '#dedbd0', accent: '#d77c35' },
@@ -18,7 +18,7 @@ try {
     if (s.quality === 'low' || s.quality === 'standard') settings.quality = s.quality;
     for (const key of ['sound', 'voice', 'autoThrottle'] as const) if (typeof s[key] === 'boolean') settings[key] = s[key];
     settings.difficulty = parseDifficulty(s.difficulty);
-    if (s.mode === 'classic' || s.mode === 'items' || s.mode === 'downhill') settings.mode = s.mode;
+    if (s.mode === 'classic' || s.mode === 'downhill') settings.mode = s.mode;
     if (Number.isInteger(s.livery) && s.livery! >= 0 && s.livery! < LIVERIES.length) settings.livery = s.livery!;
     if (s.camera === 0 || s.camera === 1) settings.camera = s.camera;
     const stage = getStage(s.stageId); const vehicle = getVehicle(s.vehicleId);

@@ -120,7 +120,7 @@ test('downhill selection survives mode changes and does not overwrite the motor 
   assert.equal(view.track, context.race.track); assert.equal(view.vehicle, context.race.vehicle);
   assert.deepEqual(context.timeline.pose.position, context.race.position);
   assert.equal(context.settings.stageId, 'pine'); assert.equal(context.settings.vehicleId, 'falcon');
-  context.setRaceMode('items'); assert.equal(context.race.stageId, 'pine'); assert.equal(context.race.vehicleId, 'falcon');
+  context.setRaceMode('classic'); assert.equal(context.race.stageId, 'pine'); assert.equal(context.race.vehicleId, 'falcon');
   context.ui.onSelect('stage', 'depot'); context.ui.onSelect('vehicle', 'trail');
   context.setRaceMode('downhill'); assert.equal(context.race.stageId, 'mist-descent'); assert.equal(context.race.vehicleId, 'carbon');
   const active = context.race; active.start(); context.ui.onSelect('stage', 'bamboo-descent');

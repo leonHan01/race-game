@@ -79,17 +79,11 @@ test('reverse steering mirrors forward yaw and follows the steered wheels', () =
   }
 });
 
-test('reverse movement cannot engage nitro or item boost and item stun cannot trigger reverse', () => {
-  const race = running(); race.mode = 'items'; race.nitro = 70; race.speed = -6;
-  race.items.player.boost = 3;
+test('reverse movement cannot engage nitro', () => {
+  const race = running(); race.nitro = 70; race.speed = -6;
   race.update(STEP, { ...forward, nitro: true });
   assert.equal(race.nitro, 70); assert.equal(race.boosting, false);
   assert.ok(race.speed > -6 && race.speed < 0);
-  for (const speed of [-4, 0, 4]) {
-    race.speed = speed; race.items.player.stun = 1.15;
-    advance(race, 0.75, reverse);
-    assert.equal(race.speed, 0); assert.equal(race.boosting, false);
-  }
 });
 
 test('reverse contacts preserve signed momentum instead of flipping the car into forward drive', () => {

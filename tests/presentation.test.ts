@@ -7,6 +7,7 @@ import { Track } from '../src/simulation/track.ts';
 import { settings } from '../src/settings.ts';
 import { RaceTimeline } from '../src/presentation.ts';
 import { STAGES, getStage } from '../src/content/stages.ts';
+import { FreeCamera } from '../src/render/free-camera.ts';
 import { SprintView } from '../src/render/sprint-view.ts';
 import { ExhaustFlames } from '../src/render/exhaust-flames.ts';
 
@@ -14,7 +15,7 @@ import { ExhaustFlames } from '../src/render/exhaust-flames.ts';
 // No browser, canvas, WebGL context, or game server is created.
 function cameraHarness(track: Track): RallyRenderer {
   return Object.assign(Object.create(RallyRenderer.prototype), {
-    track, contextAvailable: true,
+    track, contextAvailable: true, spectatorOccluders: [], freeCamera: new FreeCamera(),
     camera: new THREE.PerspectiveCamera(64, 1, 0.12, 6500),
     sprintView: new SprintView(),
     car: { group: new THREE.Group(), update() {}, setLivery() {} },
@@ -275,4 +276,34 @@ test('the renderer disconnects tyre marks during flight and reconnects only on c
   timeline.pose.airborne = false; timeline.pose.airHeight = 0; timeline.pose.position.y -= 4;
   view.render(race, idleControls(), 0, timeline.pose);
   assert.ok(intensities[0] > 0); assert.equal(intensities[1], 0); assert.ok(intensities[2] > 0);
+});
+
+
+test('aerial spectator camera follows the selected AI independently of the parked player', () => {
+  const track = new Track(); const race = new Race(track); race.start(); race.phase = 'racing';
+  race.spectating = true; race.spectatorTarget = 2;
+  const car = race.opponents.cars[2]; Object.assign(car.position, track.position(700, 0));
+  const view = cameraHarness(track); view.render(race, idleControls(), 1 / 60);
+  assert.equal(view.car.group.visible, false);
+  assert.equal(view.camera.position.y, car.position.y + 75);
+  view.camera.updateMatrixWorld();
+  const direction = view.camera.getWorldDirection(new THREE.Vector3());
+  const expected = new THREE.Vector3(car.position.x, car.position.y, car.position.z).sub(view.camera.position).normalize();
+  assert.ok(direction.distanceTo(expected) < 1e-8);
+  race.spectating = false; view.render(race, idleControls(), 1 / 60);
+  assert.equal(view.car.group.visible, true);
+});
+
+test('free spectator camera stays independent of racers, then returns to the selected car', () => {
+  const track = new Track(); const race = new Race(track); race.start(); race.phase = 'racing';
+  race.spectating = true; race.spectatorTarget = 0;
+  const view = cameraHarness(track); view.render(race, idleControls(), 1 / 60);
+  view.freeCamera.enter(view.camera); const fixedPosition = view.camera.position.clone();
+  Object.assign(race.opponents.cars[0].position, track.position(1000, 0));
+  view.render(race, idleControls(), 1 / 60);
+  assert.deepEqual(view.camera.position, fixedPosition);
+  race.phase = 'finished'; view.freeCamera.position.y += 10; view.render(race, idleControls(), 1 / 60);
+  assert.equal(view.camera.position.y, fixedPosition.y + 10);
+  view.freeCamera.reset(); view.render(race, idleControls(), 1 / 60);
+  assert.equal(view.camera.position.x, race.opponents.cars[0].position.x + 20);
 });

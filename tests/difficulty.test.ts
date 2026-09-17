@@ -47,6 +47,14 @@ test('three difficulty choices load, save and describe the selected level, inclu
   assert.equal(new Race(new Track()).difficulty, 'medium');
 });
 
+test('retired race mode preferences fall back to classic without changing vehicle or stage', () => {
+  const { module, values } = storedSettings({ mode: 'items', stageId: 'alpine', vehicleId: 'apex' });
+  assert.equal(module.settings.mode, 'classic');
+  assert.equal(module.settings.stageId, 'alpine'); assert.equal(module.settings.vehicleId, 'apex');
+  module.saveSettings();
+  assert.equal(JSON.parse(values.get('dustline-settings')!).mode, 'classic');
+});
+
 test('legacy records map only to their matching difficulty and retain mode, vehicle and stage separation', () => {
   const { module, values } = storedSettings({});
   const medium = { difficulty: 'medium' as const, autoThrottle: false };
@@ -60,10 +68,10 @@ test('legacy records map only to their matching difficulty and retain mode, vehi
   assert.equal(module.bestTime(medium), 125);
   assert.equal(module.bestTime({ ...medium, autoThrottle: true }), null);
   for (const [mode, stageId, vehicleId] of [
-    ['items', 'alpine', 'apex'], ['downhill', stages.DOWNHILL_STAGE.id, 'longboard'],
+    ['classic', 'alpine', 'apex'], ['downhill', stages.DOWNHILL_STAGE.id, 'longboard'],
   ] as const) {
     const category = { ...hard, mode, stageId, vehicleId };
-    values.set(`dustline-best-v3-${stageId}-${vehicleId}-pro-manual-${mode}`, '190');
+    values.set(module.recordKey(category, 'pro'), '190');
     assert.equal(module.bestTime(category), 190);
     assert.equal(module.bestTime({ ...category, difficulty: 'medium' }), null);
     assert.equal(module.bestTime({ ...category, difficulty: 'easy' }), null);

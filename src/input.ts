@@ -1,6 +1,6 @@
 import { idleControls, type Controls } from './simulation/race';
 
-const drivingCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'KeyQ', 'KeyX']);
+const drivingCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyQ', 'KeyX']);
 const LONG_SPACE_SWITCH_DELAY = 600;
 export class Input {
   private keys = new Set<string>();
@@ -21,8 +21,7 @@ export class Input {
     window.addEventListener('keydown', event => {
       if (event.target instanceof HTMLElement && event.target.closest('input, select, textarea')) return;
       const focusedCommand = event.target instanceof HTMLElement
-        ? event.target.closest('[data-action="use-item"]') ? 'KeyE'
-          : event.target.closest('[data-action="switch-stance"]') ? 'KeyQ' : null : null;
+        ? event.target.closest('[data-action="switch-stance"]') ? 'KeyQ' : null : null;
       if (focusedCommand && ['Space', 'Enter'].includes(event.code)) {
         event.preventDefault();
         if (this.enabled && !event.repeat) this.onCommand(focusedCommand);
@@ -32,7 +31,7 @@ export class Input {
       if (event.code === 'Escape') event.preventDefault();
       if (event.code === 'Space' && this.enabled) this.pressSpace(event);
       this.keys.add(event.code);
-      if (!event.repeat && ['Escape', 'KeyP', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'Enter'].includes(event.code)) this.onCommand(event.code);
+      if (!event.repeat && ['Escape', 'KeyP', 'KeyC', 'KeyF', 'KeyR', 'KeyQ', 'Enter'].includes(event.code)) this.onCommand(event.code);
     });
     window.addEventListener('keyup', event => {
       if (event.code === 'Space') this.releaseSpace(event.timeStamp);

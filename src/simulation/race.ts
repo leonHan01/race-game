@@ -2,8 +2,7 @@ import { clamp, SECTORS, Track, type TrackPoint } from './track';
 import { getVehicle, roadMargin, vehicleClearance, type VehicleDefinition } from '../content/vehicles';
 import { Opponents } from './opponents';
 import { difficultyProfile, type Difficulty } from '../content/difficulties';
-import { ItemRace } from './items';
-import type { RaceMode } from '../content/items';
+import type { RaceMode } from '../content/modes';
 import { longboardAcceleration } from './longboard';
 import { LongboardMotion } from './longboard-motion';
 import { VerticalMotion } from './vertical-motion';
@@ -15,7 +14,6 @@ import { NITRO_CAPACITY, NITRO_DRAIN_PER_SECOND, NITRO_CHARGE_PER_SECOND, NITRO_
 export const MAX_SPEED_KMH = 250;
 export const MAX_REVERSE_SPEED_KMH = 30;
 export { NITRO_SPEED_BONUS_KMH } from './nitro';
-const ITEM_BOOST_ACCELERATION = 24;
 const HANDBRAKE_DECELERATION_SCALE = 0.4;
 const COLLISION_SPEED_LOSS_SCALE = 0.4;
 
@@ -37,6 +35,8 @@ export class Race {
   travelHeading = 0;
   /** Signed metres per second along travelHeading; negative means reversing. */
   speed = 0;
+  spectating = false;
+  spectatorTarget = -1;
   elapsed = 0;
   countdown = 3.6;
   handbrake = false;
@@ -63,7 +63,6 @@ export class Race {
   mode: RaceMode = 'classic';
   readonly targetTime: number;
   readonly opponents: Opponents;
-  readonly items: ItemRace;
   readonly vertical = new VerticalMotion();
   readonly longboard = new LongboardMotion();
   readonly ghost = new RaceGhost();
@@ -71,7 +70,7 @@ export class Race {
   constructor(readonly track: Track, readonly vehicle: VehicleDefinition = getVehicle('falcon')) {
     if (vehicle.mode === 'longboard') this.mode = 'downhill';
     this.targetTime = track.length / track.definition.goldSpeed; this.opponents = new Opponents(track, vehicle.mode);
-    this.items = new ItemRace(track, this.opponents.cars.map(car => car.id)); this.reset();
+    this.reset();
   }
   get standings() { return this.opponents.standings(this); }
   get rank() { return this.standings.findIndex(row => row.player) + 1; }
@@ -120,7 +119,6 @@ export class Race {
     this.splits = []; this.peakSpeed = 0; this.driftTime = 0; this.penalty = 0;
     this.placeOnTrack(0);
     this.opponents.reset(this.difficulty);
-    this.items.reset();
     this.ghost.reset(this);
   }
   start() { this.reset(); this.phase = 'countdown'; }
@@ -151,7 +149,6 @@ export class Race {
     this.handbrake = false; this.handbrakeHeldTime = 0;
     this.driftDirection = 0; this.driftEntrySpeed = 0; this.releaseGripRate = 4.8;
     this.penalty += 5;
-    if (this.mode === 'items') this.items.recover();
     this.ghost.record(this, false, true, true);
   }
 
@@ -164,11 +161,15 @@ export class Race {
       return;
     }
     if (this.phase !== 'racing') return;
+    if (this.spectating) {
+      if (this.ghost.loading) return;
+      this.opponents.update(dt, this, this.elapsed);
+      this.elapsed += dt;
+      if (this.opponents.cars.every(car => car.finishTime !== null)
+        && this.ghost.replays.every(run => this.elapsed >= run.duration)) this.phase = 'finished';
+      return;
+    }
     const startTime = this.elapsed;
-    this.items.beginStep(dt, this);
-    const itemState = !this.isLongboard && this.mode === 'items' ? this.items.player : null;
-    const stunned = Boolean(itemState && itemState.stun > 0);
-    if (stunned) controls = { ...controls, throttle: false, brake: true, drift: false, nitro: false };
     this.elapsed += dt;
     // Keyboard and touch inputs share a progressive steering rack. Centre it
     // promptly on release, and pass through neutral when the player countersteers.
@@ -197,8 +198,7 @@ export class Race {
     const maximumSpeed = speedCap / 3.6 * condition;
     // Use only the boost time the tank can fund, including a partial final tick.
     const boostTime = !this.airborne && !this.isLongboard && this.speed >= 0 && controls.nitro && !controls.brake && !this.handbrake ? Math.min(dt, this.nitro / NITRO_DRAIN_PER_SECOND) : 0;
-    const itemBoost = !this.airborne && this.speed >= 0 && itemState && itemState.boost > 0 && !controls.brake && !this.handbrake ? dt : 0;
-    this.boosting = boostTime > 0 || itemBoost > 0;
+    this.boosting = boostTime > 0;
     this.nitro = clamp(this.nitro - boostTime * NITRO_DRAIN_PER_SECOND, 0, NITRO_CAPACITY);
     // Nitro temporarily raises the engine limit. After release, shed excess speed
     // progressively; an airborne car keeps its existing drag-only momentum.
@@ -210,7 +210,7 @@ export class Race {
     this.tucking = this.isLongboard && controls.nitro && !controls.brake && !this.handbrake;
     this.pushing = this.isLongboard && throttle && !this.tucking && !controls.brake && !this.handbrake && this.speed < 9;
     const grade = this.isLongboard ? this.track.grade(this.distance) * Math.cos(this.travelHeading - this.track.sample(this.distance).heading) : 0;
-    const reversing = !this.airborne && !this.isLongboard && !stunned && controls.brake && !this.handbrake && this.speed <= 0;
+    const reversing = !this.airborne && !this.isLongboard && controls.brake && !this.handbrake && this.speed <= 0;
     const stopping = controls.brake || this.handbrake || (this.speed < 0 && throttle);
     const braking = this.vehicle.braking * Math.sqrt(this.track.definition.grip);
     const acceleration = this.isLongboard
@@ -224,7 +224,7 @@ export class Race {
     const minimumSpeed = this.isLongboard ? 0 : reversing ? -MAX_REVERSE_SPEED_KMH / 3.6 * condition : Math.min(0, this.speed);
     const maximumSpeedThisStep = this.speed < 0 ? 0 : speedLimit;
     this.speed = clamp(this.speed + (this.airborne ? -this.speed * 0.035 : acceleration * handbrakeScale) * dt
-      + Math.max(NITRO_ACCELERATION * boostTime, ITEM_BOOST_ACCELERATION * itemBoost), minimumSpeed, maximumSpeedThisStep);
+      + NITRO_ACCELERATION * boostTime, minimumSpeed, maximumSpeedThisStep);
     this.drifting = !this.airborne && this.handbrake && (this.isLongboard ? this.longboard.style !== 'none' || this.longboard.switching : this.driftDirection !== 0) && this.speed > 0.5;
     if (this.drifting) this.driftTime += dt;
 
@@ -290,7 +290,6 @@ export class Race {
     }
     this.peakSpeed = Math.max(this.peakSpeed, Math.abs(this.speed) * 3.6);
     this.resolveTraffic(before, dt, startTime, collision.correctedStart);
-    this.items.endStep(this.elapsed - startTime, this);
     this.ghost.record(this, controls.brake);
   }
 

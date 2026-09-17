@@ -132,7 +132,7 @@ export class Opponents {
     const difficulty = difficultyProfile(player.difficulty);
     // Snapshot traffic first: the result does not depend on opponent iteration order.
     const traffic: Traffic[] = this.cars.filter(car => car.finishTime === null).map(car => ({ id: car.id, distance: car.distance, lane: car.lane, targetLane: car.targetLane, speed: car.speed }));
-    if (Math.abs(player.lane) < this.track.roadWidth / 2 + 1.5) {
+    if (!player.spectating && Math.abs(player.lane) < this.track.roadWidth / 2 + 1.5) {
       const roadHeading = this.track.sample(player.distance).heading;
       traffic.push({ id: 'player', distance: player.distance, lane: player.lane, targetLane: player.lane,
         speed: Math.max(0, player.speed * Math.cos(player.travelHeading - roadHeading)) });
@@ -141,16 +141,13 @@ export class Opponents {
       if (car.finishTime !== null) continue;
       const expert = difficulty.id === 'hard';
       const powered = expert && car.vehicle.mode !== 'longboard';
-      const itemState = player.mode === 'items' ? player.items.state(car.id) : null;
-      const stunned = !!itemState && itemState.stun > 0;
-      const itemBoost = !!itemState && itemState.boost > 0 && !stunned && !car.airborne;
       const clearLine = traffic.every(other => other.id === car.id
         || Math.abs(other.distance - car.distance) > Math.max(expert ? 60 : 28, car.speed * 1.2, other.speed * 0.8,
           other.distance > car.distance ? Math.max(0, car.speed - other.speed) * 3.5 + 12 : 0));
       if (Math.abs(car.targetLane - car.lane) < 0.2) car.laneHold = Math.max(0, car.laneHold - dt);
       car.planIn -= dt;
       if (car.planIn <= 0) {
-        if (expert && clearLine && car.speed > 8 && !car.airborne && !stunned) car.targetLane = this.racingLine(car);
+        if (expert && clearLine && car.speed > 8 && !car.airborne) car.targetLane = this.racingLine(car);
         else this.chooseLane(car, traffic, difficulty);
         car.planIn = expert ? 0.2 : 0.45;
       }
@@ -158,8 +155,6 @@ export class Opponents {
       const nitroLimit = normalLimit + (powered ? NITRO_SPEED_BONUS_KMH / 3.6 : 0);
       const roadTarget = this.targetSpeed(car, difficulty, nitroLimit);
       let target = Math.min(normalLimit, roadTarget);
-      if (itemBoost) target = Math.min(normalLimit, target + 12);
-      if (stunned) target = 3;
       let available = Infinity;
       let trafficTarget = Infinity;
       let emergencyBrake = false;
@@ -182,7 +177,7 @@ export class Opponents {
       }
       const curvature = this.track.curvature(car.distance + car.speed * 0.18);
       const roomToSlide = traffic.every(other => other.id === car.id || Math.abs(other.distance - car.distance) > 12);
-      car.drifting = powered && roomToSlide && !car.airborne && !stunned && !emergencyBrake && car.speed > 14
+      car.drifting = powered && roomToSlide && !car.airborne && !emergencyBrake && car.speed > 14
         && Math.abs(curvature) > (car.drifting ? 0.0018 : 0.0032);
       const slide = car.drifting ? Math.sign(curvature) * clamp(Math.abs(curvature) * 22 + 0.14, 0.2, 0.6)
         * (car.vehicle.mode === 'motorcycle' ? 0.45 : 1) : 0;
@@ -191,7 +186,7 @@ export class Opponents {
       if (car.drifting) car.nitro = Math.min(NITRO_CAPACITY, car.nitro + NITRO_CHARGE_PER_SECOND * Math.min(1, Math.abs(car.driftAngle) / 0.65) * dt);
       car.nitroCooldown = Math.max(0, car.nitroCooldown - dt);
       const wasUsingNitro = car.usingNitro;
-      const useNitro = powered && !car.airborne && !stunned && !emergencyBrake && !car.drifting && Math.abs(car.driftAngle) < 0.13
+      const useNitro = powered && !car.airborne && !emergencyBrake && !car.drifting && Math.abs(car.driftAngle) < 0.13
         && car.nitro > (wasUsingNitro ? 0 : 20) && car.nitroCooldown === 0 && car.speed > 18
         && Math.abs(curvature) < 0.002 && roadTarget > car.speed + (wasUsingNitro ? -1 : 5)
         // Short exits can fund a burst even when the next braking zone prevents maximum speed.
@@ -199,12 +194,12 @@ export class Opponents {
         && trafficTarget > car.speed + 8 && Math.abs(this.track.grade(car.distance + car.speed * 0.5)) < 0.18;
       const boostTime = useNitro ? Math.min(dt, car.nitro / NITRO_DRAIN_PER_SECOND) : 0;
       car.usingNitro = boostTime > 0;
-      car.boosting = car.usingNitro || itemBoost;
+      car.boosting = car.usingNitro;
       car.nitro = clamp(car.nitro - boostTime * NITRO_DRAIN_PER_SECOND, 0, NITRO_CAPACITY);
       if (wasUsingNitro && !car.usingNitro) car.nitroCooldown = 0.8;
       if (car.usingNitro) target = roadTarget;
       target = Math.min(target, trafficTarget);
-      const boostAcceleration = Math.max(NITRO_ACCELERATION * boostTime / dt, itemBoost ? 24 : 0);
+      const boostAcceleration = NITRO_ACCELERATION * boostTime / dt;
       let acceleration = clamp((target - car.speed) * 1.4, -car.vehicle.braking * this.track.definition.grip,
         Math.max(0, car.vehicle.acceleration * difficulty.acceleration * (1 - car.speed / (normalLimit * 1.1))) + boostAcceleration);
       // A controlled power slide costs traction, but still allows exit acceleration.
@@ -213,10 +208,10 @@ export class Opponents {
         const natural = longboardAcceleration(car.speed, this.track.grade(car.distance), car.speed < 9, car.speed >= 9, false, false, 1, car.vehicle);
         acceleration = Math.min(natural * car.pace * difficulty.acceleration, clamp((target - car.speed) * 1.4, -car.vehicle.braking, 5));
       }
-      // Limit jerk during normal driving. Sudden obstructions and item hits retain braking priority.
+      // Limit jerk during normal driving. Sudden obstructions retain braking priority.
       car.acceleration += clamp(acceleration - car.acceleration, -(expert ? 24 : 14) * dt,
         (car.boosting ? 40 : car.acceleration < 0 ? 24 : expert ? 12 : 8) * dt);
-      if (emergencyBrake || (itemState && itemState.stun > 0)) car.acceleration = Math.min(car.acceleration, acceleration);
+      if (emergencyBrake) car.acceleration = Math.min(car.acceleration, acceleration);
       if (car.airborne) car.acceleration = -car.speed * 0.035;
       car.braking = car.acceleration < (car.braking ? -0.6 : -1.8);
       const speedLimit = car.usingNitro ? nitroLimit : Math.max(normalLimit, car.speed - (car.airborne ? 0 : 12 * dt));

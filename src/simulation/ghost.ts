@@ -27,10 +27,8 @@ export function ghostTrackSignature(track: Track) {
 }
 
 function capture(race: Race, braking: boolean, cut: boolean): GhostFrame {
-  const stun = race.mode === 'items' ? race.items.player.stun : 0;
   return { time: race.elapsed, position: { ...race.position },
-    yaw: race.heading + race.driftAngle + (race.isLongboard ? race.longboardPose.stanceYaw : 0)
-      + (stun > 0 ? Math.sin(stun / 1.15 * Math.PI) * 0.6 : 0),
+    yaw: race.heading + race.driftAngle + (race.isLongboard ? race.longboardPose.stanceYaw : 0),
     speed: race.speed, steering: race.steerVisual, driftAngle: race.driftAngle,
     pitch: race.pitch, airHeight: race.airHeight, distance: race.distance,
     airborne: race.airborne, braking, handbrake: race.handbrake, cut, boosting: race.boosting,
@@ -41,6 +39,7 @@ function capture(race: Race, braking: boolean, cut: boolean): GhostFrame {
 export class RaceGhost {
   replays: GhostRun[] = [];
   loading = false;
+  loadError = false;
   private frames: GhostFrame[] = [];
   private interval = SAMPLE_INTERVAL;
   private valid = true;
@@ -48,7 +47,7 @@ export class RaceGhost {
   private runId?: string;
 
   reset(race: Race) {
-    this.replays = []; this.loading = false; this.poses = []; this.runId = undefined;
+    this.replays = []; this.loading = false; this.loadError = false; this.poses = []; this.runId = undefined;
     this.frames = [capture(race, false, false)];
     this.interval = SAMPLE_INTERVAL; this.valid = true;
   }

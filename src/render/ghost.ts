@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Race } from '../simulation/race';
 import type { GhostFrame } from '../simulation/ghost';
-import type { VehicleDefinition } from '../content/vehicles';
+import { getVehicle, type VehicleDefinition } from '../content/vehicles';
 import { GHOST_COLORS } from '../content/ghosts';
 import { buildVehicleBody, buildWheelGeometry, createVehicleMaterials, WHEEL_RADIUS, CAR_EXHAUST_PORTS } from './vehicle-model';
 import { LongboardRider } from './longboard';
@@ -9,7 +9,7 @@ import { Motorcycle, motorcycleExhaustPort } from './motorcycle';
 import { disposeObject } from './dispose';
 import { ExhaustFlames } from './exhaust-flames';
 
-/** A visual-only historical run: no collider, shadow, items or leaderboard entry. */
+/** A visual-only historical run: no collider, shadow or leaderboard entry. */
 export class GhostVehicle {
   readonly group: THREE.Group;
   readonly color: string;
@@ -60,14 +60,14 @@ export class GhostVehicle {
   reset() { this.group.visible = false; this.time = 0; this.exhaust?.reset(); }
 
   update(race: Race, elapsed: number, playerPosition: { x: number; y: number; z: number }) {
-    const pose = race.phase === 'menu' ? null : race.ghost.sample(elapsed, this.index);
+    const pose = race.phase === 'menu' ? null : race.ghost.sample(race.spectating ? Math.min(elapsed, race.ghost.replays[this.index]?.duration ?? elapsed) : elapsed, this.index);
     if (elapsed < this.time) this.exhaust?.reset();
     const dt = race.phase === 'racing' ? Math.max(0, Math.min(0.1, elapsed - this.time)) : 0; this.time = elapsed;
     const separation = pose ? Math.hypot(pose.position.x - playerPosition.x, pose.position.y - playerPosition.y, pose.position.z - playerPosition.z) : Infinity;
-    this.group.visible = pose !== null && separation < 230;
+    this.group.visible = pose !== null && (race.spectating || separation < 230);
     if (!this.group.visible || !pose) { this.exhaust?.reset(); return; }
     // Keep the player's vehicle readable when the two trajectories overlap.
-    this.material.opacity = THREE.MathUtils.lerp(0.07, 0.28, THREE.MathUtils.clamp(separation / 6, 0, 1));
+    this.material.opacity = race.spectating ? 0.75 : THREE.MathUtils.lerp(0.07, 0.28, THREE.MathUtils.clamp(separation / 6, 0, 1));
     this.place(race, pose);
     if (this.rider) this.rider.update(pose.speed, pose.steering, pose.driftAngle, pose.braking, pose.handbrake, dt, false, false, pose.longboardPose);
     else if (this.bike) this.bike.update(pose.speed, pose.steering, pose.driftAngle, pose.braking, pose.handbrake, dt);
@@ -108,8 +108,13 @@ export class GhostFleet {
     while (!race.ghost.loading && this.models.length > count) {
       const model = this.models.pop()!; this.group.remove(model.group); disposeObject(model.group);
     }
-    for (let i = this.models.length; i < count; i++) {
-      const model = new GhostVehicle(this.vehicle, i); this.models.push(model); this.group.add(model.group);
+    for (let i = 0; i < count; i++) {
+      const vehicle = race.spectating ? getVehicle(race.ghost.replays[i].vehicleId) : this.vehicle;
+      if (this.models[i]?.vehicle.id === vehicle.id) continue;
+      if (this.models[i]) {
+        this.group.remove(this.models[i].group); disposeObject(this.models[i].group);
+      }
+      const model = new GhostVehicle(vehicle, i); this.models[i] = model; this.group.add(model.group);
     }
     this.models.forEach(model => model.update(race, elapsed, playerPosition));
   }

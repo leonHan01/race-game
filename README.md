@@ -75,7 +75,6 @@ The build is written to `dist/`. Open the preview URL printed in the terminal. D
 | Steer left / right | `A` / `D`, or `←` / `→` |
 | Hold handbrake / drift | Hold `Space`; release to restore grip |
 | Nitro boost | Hold either `Shift` key or the nitro button; drift to recharge |
-| Use item | Press `E` or click the item slot in Item Rush |
 | Switch chase / low camera | `C` |
 | Recover to the road | `R` — adds a 5-second time penalty |
 | Pause / resume | `Esc` / `P` |
@@ -156,13 +155,13 @@ Three player liveries are available: Sandstone White, Forest Green, and Racing R
 
 Select **摩托车模式** (Motorcycle mode) in the main menu or garage, choose **APEX R600** or **TRAIL X450**, then start a stage. **汽车模式** switches back to cars. Changes are available before a race; vehicle choice and livery persist, and each vehicle has separate records.
 
-Use `W / ↑` for throttle, `S / ↓` to brake and then reverse, `A / D` to steer and lean, and `Space` for rear-wheel braking. Slide while steering to charge nitro, then release the rear brake and hold `Shift` to boost. The sport bike accelerates faster; the enduro bike loses less speed and condition on the shoulder. Bikes slide less than cars, with riders leaning into turns and steady chase / low cameras. All regular stages support motorcycles in classic and item races, with five motorcycle opponents.
+Use `W / ↑` for throttle, `S / ↓` to brake and then reverse, `A / D` to steer and lean, and `Space` for rear-wheel braking. Slide while steering to charge nitro, then release the rear brake and hold `Shift` to boost. The sport bike accelerates faster; the enduro bike loses less speed and condition on the shoulder. Bikes slide less than cars, with riders leaning into turns and steady chase / low cameras. All regular stages support motorcycles in classic races, with five motorcycle opponents.
 
 ## Racing and drifting
 
 All six cars start after the same countdown. AI drivers adjust their speed for corners and grip, look for a free neighboring lane, and slow down behind traffic. Easy, Medium and Hard progressively increase their pace and overtaking frequency.
 
-Medium and Hard rivals have stronger cruising and cornering pace with quicker throttle response. Rivals anticipate slower traffic from their closing speed, start passing earlier and reduce following slowdown while moving into a free lane. Hard rivals hold their passing lane until traffic is clear, then resume outside–apex–outside lines. Cars drift with countersteer; motorcycles use smaller rear-wheel slides. These slides charge a finite nitro tank and retain acceleration according to the slide angle. Hard cars and motorcycles start with 60% charge, then boost on clear exits and straights with visible exhaust flames; short exits support brief bursts when the upcoming braking zone allows them. Nitro shares the player rules: 100% capacity, 25% drain per second and +70 km/h top speed, followed by a smooth return to normal speed. Traffic, tight corners, flight, collisions and item stuns interrupt boosts. Longboards do not receive nitro.
+Medium and Hard rivals have stronger cruising and cornering pace with quicker throttle response. Rivals anticipate slower traffic from their closing speed, start passing earlier and reduce following slowdown while moving into a free lane. Hard rivals hold their passing lane until traffic is clear, then resume outside–apex–outside lines. Cars drift with countersteer; motorcycles use smaller rear-wheel slides. These slides charge a finite nitro tank and retain acceleration according to the slide angle. Hard cars and motorcycles start with 60% charge, then boost on clear exits and straights with visible exhaust flames; short exits support brief bursts when the upcoming braking zone allows them. Nitro shares the player rules: 100% capacity, 25% drain per second and +70 km/h top speed, followed by a smooth return to normal speed. Traffic, tight corners, flight and collisions interrupt boosts. Longboards do not receive nitro.
 
 All vehicles can collide with the player and one another. Contacts follow each vehicle's size and orientation: rear-end and head-on impacts exchange momentum, while side contact pushes vehicles sideways. Heavier vehicles move less under the same impact, and hard hits reduce player condition. Continuous collision checks prevent high-speed pass-through, keep vehicles inside the course barriers, and let airborne vehicles pass above others when there is enough clearance. Finished opponents no longer block the road.
 
@@ -178,22 +177,6 @@ Nitro starts empty each race. Moving handbrake slides charge the tank, with stro
 
 Pace-note grades **2–3 indicate tighter corners**; **4–5 indicate faster corners**. Going off the road slows the car and damages it. Brake before the corner, then accelerate as you straighten out.
 
-## Item Rush
-
-Select **道具赛** (Item Rush) from the main menu, then **开始道具赛**. Every existing indoor and outdoor race stage gets rows of three blue question-mark boxes and cyan boost pads. Cross a box to draw one item, revealed after 0.8 seconds; press `E` or click the left-side item slot to use it. Full slots retain their item, boxes respawn after 2.5 seconds, and pads automatically provide a 1.4-second sprint.
-
-| Item | Effect |
-| --- | --- |
-| Turbo sprint | Three seconds of extra acceleration within the vehicle speed limit; brakes and handbrake take priority |
-| Banana trap | Drops behind the vehicle and briefly slows the next driver who hits it |
-| Straight disc | Travels forward along the current lane and hits a rival |
-| Homing disc | Tracks the nearest unfinished rival within 180 meters ahead, following lane changes; retained if no target is available |
-| Energy shield | Lasts up to seven seconds and absorbs one disc, banana, or lightning hit |
-| Lightning pulse | Slows other unfinished drivers within 180 meters ahead or behind |
-
-AI drivers collect and use the same items. Trailing drivers have better odds of sprint, homing, and lightning items. Hits grant brief protection against consecutive attacks and do not damage vehicles or add penalties. Pause freezes item timers; recovery clears stun and item sprint; restart clears inventories, projectiles, and traps. Item Rush records are separate from classic records, including legacy times.
-
-Props share instanced geometry, distant props are culled, and projectile/trap pools have fixed limits and expiry. No extra per-item lights or external assets are required.
 
 ## Longboard downhill
 
@@ -211,9 +194,9 @@ Choose from **RIDGELINE DH**, **BREEZE CR42**, **NEEDLE DH36**, **SWITCHBLADE FR
 
 Double-tapping Space rotates rider and board 180 degrees while preserving downhill travel. Holding Space for 0.6 seconds begins with a hands-down slide, then automatically transitions into the 180-degree Switch on the opposite side; release before another switch can begin. Switch swaps the physical leading foot, pushing foot and footbraking foot while steering inputs retain their direction. Animations include preload, shoulder counter-rotation, a planted slide glove and progressive recovery. Pausing freezes the action; recovery keeps the completed stance; restarting restores Regular. See [movement references and mappings](docs/longboard-actions.md).
 
-Gravity accelerates the board downhill. Braking takes priority over pushing and tucking, and leaving the asphalt slows the rider and reduces condition. All six undamaged boards share a **270 km/h** speed limit. This discipline has no nitro or items; the auto-throttle setting becomes automatic low-speed pushing. The rider animates pushing, tucking, leaning and braking, with a closer follow camera and wind/rolling audio.
+Gravity accelerates the board downhill. Braking takes priority over pushing and tucking, and leaving the asphalt slows the rider and reduces condition. All six undamaged boards share a **270 km/h** speed limit. This discipline has no nitro; the auto-throttle setting becomes automatic low-speed pushing. The rider animates pushing, tucking, leaning and braking, with a closer follow camera and wind/rolling audio.
 
-Five ordered checkpoints, finish rankings, medals, pause, restart and **R** recovery (+5 seconds) remain available. The HUD shows stance, slope and descended height, and downhill records are stored separately. Switching back to Classic or Item Rush restores the previously selected car or motorcycle and stage.
+Five ordered checkpoints, finish rankings, medals, pause, restart and **R** recovery (+5 seconds) remain available. The HUD shows stance, slope and descended height, and downhill records are stored separately. Switching back to Classic restores the previously selected car or motorcycle and stage.
 
 ## Settings and saves
 
@@ -227,7 +210,7 @@ Five ordered checkpoints, finish rankings, medals, pause, restart and **R** reco
 
 Best times are stored separately for each **race mode × stage × vehicle × handling difficulty × throttle mode**. Previous Pine Ridge / FALCON R4 records remain readable. Difficulty has three levels: **简单 (Easy), 中等 (Medium, default), 困难 (Hard)**. Easy provides stronger grip, slower opponents and larger following gaps; Hard reduces grip and raises rival pace and overtaking frequency. Changes apply at the next start. Former Club settings and records map to Medium, and Pro maps to Hard. AI previews braking distance, ramps acceleration and steering, and settles each lane change before planning the next. Settings and records use browser-local storage; there is no account or cloud synchronization.
 
-Every race loads the five fastest complete recorded trajectories for its settings, ranked by total time including rescue penalties. Every finish competes for a place, and separate races with tied scores remain eligible. Ranks 1–5 use translucent cyan, gold, pink, green and violet vehicles, with matching HUD numbers and times on hover. Ghosts replay movement, jumps, rescue teleports and longboard poses; cars and motorcycles replay matching exhaust flames during their recorded nitro or item boosts. Pause freezes both vehicles and flames, restart resets them, and each ghost disappears after its own finish time. Ghosts do not participate in collisions, items or standings. If fewer than five trajectories exist, only those available appear. Previous single-best ghosts migrate automatically; older trajectories lack boost data, while time-only records retain their scores and new trajectories accumulate from subsequent finishes. IndexedDB stores history asynchronously, with a session fallback when storage is unavailable.
+Every race loads the five fastest complete recorded trajectories for its settings, ranked by total time including rescue penalties. Every finish competes for a place, and separate races with tied scores remain eligible. Ranks 1–5 use translucent cyan, gold, pink, green and violet vehicles, with matching HUD numbers and times on hover. Ghosts replay movement, jumps, rescue teleports and longboard poses; cars and motorcycles replay matching exhaust flames during their recorded nitro boosts. Pause freezes both vehicles and flames, restart resets them, and each ghost disappears after its own finish time. Ghosts do not participate in collisions or standings. If fewer than five trajectories exist, only those available appear. Previous single-best ghosts migrate automatically; older trajectories lack boost data, while time-only records retain their scores and new trajectories accumulate from subsequent finishes. IndexedDB stores history asynchronously, with a session fallback when storage is unavailable.
 
 The game pauses when its tab loses focus. Menus and paused scenes render on demand. Cars and cameras share interpolated poses; vegetation and rival wheels use instancing, and distant opponents are culled to limit rendering work.
 

@@ -42,7 +42,7 @@ export class RivalCars {
     this.group.visible = race.phase !== 'menu';
     this.models.forEach((model, i) => {
       const pose = poses[i]; if (!pose) return;
-      model.car.visible = Math.hypot(pose.position.x - race.position.x, pose.position.z - race.position.z) < 230;
+      model.car.visible = race.spectating || Math.hypot(pose.position.x - race.position.x, pose.position.z - race.position.z) < 230;
       model.car.position.set(pose.position.x, pose.position.y + 0.065, pose.position.z); model.car.rotation.y = pose.heading + pose.driftAngle;
       model.car.rotation.order = 'YXZ'; model.car.rotation.x = pose.pitch;
       const groundPitch = race.track.hasJumps ? Math.atan(race.track.grade(race.opponents.cars[i].distance, 1.3)) : 0;
@@ -72,8 +72,6 @@ export class RivalCars {
       }
       if (race.phase === 'menu' || race.phase === 'countdown' || race.phase === 'finished' || pose.airborne || !model.car.visible || race.opponents.cars[i].finishTime !== null) exhaust?.reset();
       else if (race.phase === 'racing') exhaust?.update(pose.boosting, pose.speed, dt);
-      const stun = race.mode === 'items' ? race.items.state(race.opponents.cars[i].id).stun : 0;
-      if (stun > 0) model.car.rotation.y += Math.sin(stun / 1.15 * Math.PI) * 0.6;
       if (model.bike) {
         model.bike.update(pose.speed, pose.steering, pose.driftAngle, race.opponents.cars[i].braking, pose.drifting, dt);
         return;

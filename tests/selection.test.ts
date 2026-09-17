@@ -78,7 +78,7 @@ test('shared starting-grid lines release their geometry and material exactly onc
 test('garage switches motorcycle classes and cars while preserving race rules and saved selection', () => {
   const source = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const callback = source.slice(source.indexOf('ui.onSelect ='), source.indexOf('input.onCommand ='));
-  const track = new Track(); const race = new Race(track); race.mode = 'items';
+  const track = new Track(); const race = new Race(track); race.mode = 'classic';
   let reopened = 0;
   const ui = {
     dialog: { open: true, dataset: { page: 'garage' } },
@@ -91,7 +91,7 @@ test('garage switches motorcycle classes and cars while preserving race rules an
   const context = vm.createContext({
     Track, Race, RaceTimeline, getStage, getVehicle, raceSelection, track, race, timeline: new RaceTimeline(race), ui,
     view: { contextAvailable: true, setVehicle() {}, setStage() {}, reset() {} },
-    settings: { ...settings, stageId: 'pine', vehicleId: 'falcon', mode: 'items' }, saveSettings() {},
+    settings: { ...settings, stageId: 'pine', vehicleId: 'falcon', mode: 'classic' }, saveSettings() {},
     input: { clear() {} }, audio: { reset() {} }, performance: { now: () => 1000 }, dirty: false, lastFrame: 0,
   });
   vm.runInContext(ts.transpile(callback, { target: ts.ScriptTarget.ES2022 }), context);
@@ -100,7 +100,7 @@ test('garage switches motorcycle classes and cars while preserving race rules an
   for (const id of ['apex', 'trail', 'falcon']) {
     context.ui.onSelect('vehicle', id);
     assert.equal(context.settings.vehicleId, id); assert.equal(context.race.vehicleId, id);
-    assert.equal(context.race.mode, 'items'); assert.equal(context.race.stageId, 'pine');
+    assert.equal(context.race.mode, 'classic'); assert.equal(context.race.stageId, 'pine');
     assert.ok(context.race.opponents.cars.every((car: { vehicle: { mode: string } }) => car.vehicle.mode === getVehicle(id).mode));
     assert.deepEqual(context.timeline.pose.position, context.race.position);
   }
@@ -108,5 +108,5 @@ test('garage switches motorcycle classes and cars while preserving race rules an
   const active = context.race; active.start(); active.pause();
   context.ui.onSelect('vehicle', 'falcon');
   assert.equal(context.race, active); assert.equal(context.settings.vehicleId, 'trail');
-  active.start(); assert.equal(active.vehicleMode, 'motorcycle'); assert.equal(active.mode, 'items');
+  active.start(); assert.equal(active.vehicleMode, 'motorcycle'); assert.equal(active.mode, 'classic');
 });

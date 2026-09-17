@@ -105,31 +105,6 @@ test('focused nitro supports Space and Enter holds without drifting or issuing m
   }
 });
 
-test('E issues a single item command per press, ignores key-repeat, and leaves driving controls untouched', () => {
-  const { window, input } = setup(); const commands: string[] = [];
-  input.onCommand = command => commands.push(command);
-  assert.equal(dispatch(window, 'keydown', { code: 'KeyE', repeat: false }).defaultPrevented, true);
-  dispatch(window, 'keydown', { code: 'KeyE', repeat: true });
-  assert.deepEqual(commands, ['KeyE']); assert.deepEqual({ ...input.read() }, idleControls());
-  dispatch(window, 'keyup', { code: 'KeyE' }); dispatch(window, 'keydown', { code: 'KeyE', repeat: false });
-  assert.deepEqual(commands, ['KeyE', 'KeyE']);
-});
-
-test('Space and Enter activate a focused item slot once without engaging the handbrake', () => {
-  const { window, input } = setup(); const commands: string[] = [];
-  input.onCommand = command => commands.push(command);
-  const item = new Button('Item');
-  Object.assign(item, { closest: (selector: string) => selector === '[data-action="use-item"]' ? item : null });
-  for (const code of ['Space', 'Enter']) {
-    for (const repeat of [false, true]) {
-      const event = Object.assign(new Event('keydown', { cancelable: true }), { code, repeat });
-      Object.defineProperty(event, 'target', { value: item }); window.dispatchEvent(event);
-      assert.equal(event.defaultPrevented, true); assert.equal(input.read().drift, false);
-    }
-    dispatch(window, 'keyup', { code });
-  }
-  assert.deepEqual(commands, ['KeyE', 'KeyE']); assert.deepEqual({ ...input.read() }, idleControls());
-});
 
 test('Q requests one switch per press and focused switch accepts Space/Enter without braking', () => {
   const { window, input } = setup(); const commands: string[] = [];

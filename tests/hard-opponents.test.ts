@@ -80,14 +80,13 @@ test('nitro has a finite tank, handles a partial tick, and releases speed smooth
   assert.ok(car.speed <= car.vehicle.topSpeed / 3.6 + 1e-8);
 });
 
-test('blocked traffic, incoming corners, flight and item stuns prevent nitro use', () => {
-  for (const condition of ['traffic', 'corner', 'airborne', 'stun'] as const) {
+test('blocked traffic, incoming corners, and flight prevent nitro use', () => {
+  for (const condition of ['traffic', 'corner', 'airborne'] as const) {
     class ApproachingCorner extends Straight { override curvature(distance = 0) { return distance > 100 ? 0.015 : 0; } }
     const { race, car } = solo(condition === 'corner' ? new ApproachingCorner() : new Straight());
     car.speed = 60;
     if (condition === 'traffic') { race.placeOnTrack(car.distance + 15); race.speed = 0; }
     if (condition === 'airborne') car.airborne = true;
-    if (condition === 'stun') { race.mode = 'items'; race.items.state(car.id).stun = 1; }
     const charge = car.nitro;
     race.opponents.update(STEP, race, 0);
     assert.equal(car.usingNitro, false, condition); assert.equal(car.boosting, false, condition);

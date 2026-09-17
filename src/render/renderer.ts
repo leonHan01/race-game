@@ -13,10 +13,11 @@ import { LongboardRider } from './longboard';
 import { disposeObject } from './dispose';
 import { RivalCars } from './rivals';
 import { createVehicleEnvironment } from './vehicle-environment';
-import { ItemVisuals } from './items';
 import { placeGroundShadow } from './ground-shadow';
 import { BIKE_AXLES } from './motorcycle';
 import { SprintView } from './sprint-view';
+import { spectatorFocus } from '../simulation/spectator';
+import { FreeCamera } from './free-camera';
 import { GhostFleet } from './ghost';
 
 const DUST_COUNT = 160;
@@ -25,12 +26,13 @@ interface Dust { x: number; y: number; z: number; vx: number; vz: number; life: 
 export class RallyRenderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
+  readonly freeCamera = new FreeCamera();
   readonly camera = new THREE.PerspectiveCamera(58, 1, 0.12, 6500);
   car = createPlayerVehicle(raceSelection(settings.mode, settings.stageId, settings.vehicleId).vehicle);
   private rivals = new RivalCars(raceSelection(settings.mode, settings.stageId, settings.vehicleId).vehicle.mode);
-  private itemVisuals?: ItemVisuals;
   private ghost?: GhostFleet;
   private sceneryRoot = new THREE.Group();
+  private spectatorOccluders: THREE.Object3D[] = [];
   private dust: Dust[] = [];
   private dustCursor = 0;
   private dustAccumulator = 0;
@@ -96,6 +98,10 @@ export class RallyRenderer {
   }
 
   private applyTheme() {
+    this.spectatorOccluders = [];
+    this.sceneryRoot.traverse(object => {
+      if (['venue-roof', 'roof-beams', 'lamp-housings', 'ceiling-lamps', 'wall-west', 'wall-east', 'wall-north', 'wall-south'].includes(object.name)) this.spectatorOccluders.push(object);
+    });
     const theme = this.track.definition.theme;
     // Replacing the source also invalidates Three.js's cached reflection filtering.
     this.scene.environment?.dispose();
@@ -115,9 +121,6 @@ export class RallyRenderer {
   setStage(track: Track) {
     this.track = track;
     this.clearGhost();
-    if (this.itemVisuals) {
-      this.scene.remove(this.itemVisuals.group); disposeObject(this.itemVisuals.group); this.itemVisuals = undefined;
-    }
     disposeObject(this.sceneryRoot); this.sceneryRoot.clear();
     this.scenery = buildWorld(this.sceneryRoot, track);
     this.applyTheme(); this.setQuality(); this.reset();
@@ -144,6 +147,7 @@ export class RallyRenderer {
   }
   resize() { this.camera.aspect = window.innerWidth / window.innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(window.innerWidth, window.innerHeight); }
   reset() {
+    this.freeCamera.reset();
     this.sprintView.reset();
     this.ghost?.reset();
     if (!(this.car instanceof LongboardRider)) this.car.exhaust?.reset();
@@ -159,14 +163,15 @@ export class RallyRenderer {
 
   render(race: Race, controls: Controls, dt: number, pose: VehiclePose = capturePose(race)) {
     if (!this.contextAvailable) return;
+    this.car.group.visible = !race.spectating;
+    this.spectatorOccluders.forEach(object => { object.visible = !race.spectating; });
     const frame = this.track.sample(pose.distance);
     const p = pose.position;
     const forwardX = -Math.sin(pose.roadHeading);
     const forwardZ = -Math.cos(pose.roadHeading);
     const menu = race.phase === 'menu';
     const active = race.phase === 'racing';
-    const stun = race.mode === 'items' ? race.items.player.stun : 0;
-    const bodyHeading = pose.heading + pose.driftAngle + (race.isLongboard ? pose.longboardPose.stanceYaw : 0) + (stun > 0 ? Math.sin(stun / 1.15 * Math.PI) * 0.6 : 0);
+    const bodyHeading = pose.heading + pose.driftAngle + (race.isLongboard ? pose.longboardPose.stanceYaw : 0);
     this.car.group.position.set(p.x, p.y + 0.065, p.z);
     this.car.group.rotation.y = bodyHeading;
     this.car.group.rotation.x = pose.pitch;
@@ -191,8 +196,6 @@ export class RallyRenderer {
       this.ghost = new GhostFleet(race.vehicle); this.scene.add(this.ghost.group);
     }
     this.ghost?.update(race, pose.elapsed, pose.position);
-    if (race.mode === 'items' && !this.itemVisuals) { this.itemVisuals = new ItemVisuals(race); this.scene.add(this.itemVisuals.group); }
-    this.itemVisuals?.update(race, pose);
     this.car.group.updateWorldMatrix(true, false);
     placeGroundShadow(this.car.group, p, pose.airHeight, bodyHeading, roadPitch);
     const motorcycle = race.vehicleMode === 'motorcycle';
@@ -244,10 +247,18 @@ export class RallyRenderer {
     if (this.track.confine(this.targetPosition, 0.4)) {
       this.targetLook.x += this.targetPosition.x - cameraX; this.targetLook.z += this.targetPosition.z - cameraZ;
     }
+    if (race.spectating) {
+      const focus = spectatorFocus(race, pose.elapsed);
+      const point = focus.index < 5 ? pose.rivals[focus.index].position : focus.position;
+      const height = this.camera.aspect < 1 ? 110 : 75;
+      this.targetPosition.set(point.x + 20, point.y + height, point.z + 38);
+      this.targetLook.set(point.x, point.y, point.z);
+    }
     this.camera.position.copy(this.targetPosition);
     this.camera.lookAt(this.targetLook);
+    if (race.spectating && this.freeCamera.active) this.freeCamera.apply(this.camera);
     this.sprintView.update(race.boosting && !race.isLongboard && !pose.airborne, active, dt, this.motionPreference?.matches);
-    const desiredFov = (menu ? 44 : settings.camera === 1 ? 72 : 64) + this.sprintView.fovIncrease;
+    const desiredFov = (race.spectating ? 60 : menu ? 44 : settings.camera === 1 ? 72 : 64) + this.sprintView.fovIncrease;
     if (this.camera.fov !== desiredFov || this.sprintView.intensity > 0) {
       this.camera.fov = desiredFov; this.camera.updateProjectionMatrix();
       // A slight horizontal squeeze complements the wide-angle rush. Only the
